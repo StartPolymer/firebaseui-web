@@ -3,7 +3,8 @@
   "version": "3.1.2-dist.1",
   "description": "Javascript library for customizable UI on top of Firebase SDK",
   "files": [
-    "dist/firebaseui.js",
+    "dist/firebaseui__cs.js",
+    "dist/firebaseui__en.js",
     "dist/firebaseui.css",
     "dist/npm.js",
     "dist/index.d.ts",
