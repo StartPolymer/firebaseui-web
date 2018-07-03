@@ -1,6 +1,6 @@
 {
   "name": "firebaseui-multilang",
-  "version": "3.1.1+dist.3",
+  "version": "3.1.2-dist.1",
   "description": "Javascript library for customizable UI on top of Firebase SDK",
   "files": [
     "dist/firebaseui.js",
