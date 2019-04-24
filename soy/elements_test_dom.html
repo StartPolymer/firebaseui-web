@@ -2,7 +2,6 @@
 
 <style>
 table {
-  border-collapse: collapse;
   margin: 0 0 40px;
 }
 table,
@@ -118,10 +117,25 @@ td {
     <td><div id="password-recovery-button" class="firebaseui-container"></div></td>
   </tr>
 
+  <!-- troubleGettingEmailButton -->
+  <tr>
+    <td>troubleGettingEmailButton</td>
+    <td><div id="trouble-getting-email-button" class="firebaseui-container"></div></td>
+  </tr>
+
+  <!-- resendEmailLinkButton -->
+  <tr>
+    <td>resendEmailLinkButton</td>
+    <td><div id="resend-email-link-button" class="firebaseui-container"></div></td>
+  </tr>
+
   <!-- cancelButton -->
   <tr>
-    <td>cancelButton</td>
+    <td rowspan="2">cancelButton</td>
     <td><div id="cancel-button" class="firebaseui-container"></div></td>
+  </tr>
+  <tr>
+    <td><div id="cancel-button-custom-label" class="firebaseui-container"></div></td>
   </tr>
 
   <!-- infoBar -->
@@ -156,9 +170,19 @@ td {
 
   <!-- busyIndicator -->
   <tr>
-    <td>busyIndicator</td>
+    <td rowspan="2">busyIndicator</td>
     <td>
       <div id="busy-indicator" class="firebaseui-container">
+        <h1>Title</h1>
+        <p><a href="https://mail.google.com">Gmail</a></p>
+        <p><a href="https://drive.google.com">Google Drive</a></p>
+        <p><a href="https://calendar.google.com">Google Calendar</a></p>
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <div id="busy-indicator-spinner" class="firebaseui-container">
         <h1>Title</h1>
         <p><a href="https://mail.google.com">Gmail</a></p>
         <p><a href="https://drive.google.com">Google Drive</a></p>

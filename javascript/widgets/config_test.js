@@ -20,8 +20,10 @@ goog.provide('firebaseui.auth.widget.ConfigTest');
 
 goog.require('firebaseui.auth.CredentialHelper');
 goog.require('firebaseui.auth.log');
+goog.require('firebaseui.auth.testing.FakeUtil');
 goog.require('firebaseui.auth.util');
 goog.require('firebaseui.auth.widget.Config');
+goog.require('goog.array');
 goog.require('goog.testing');
 goog.require('goog.testing.PropertyReplacer');
 goog.require('goog.testing.jsunit');
@@ -30,6 +32,7 @@ goog.setTestOnly('firebaseui.auth.widget.ConfigTest');
 
 var config;
 var stub = new goog.testing.PropertyReplacer();
+var testUtil;
 var errorLogMessages = [];
 var warningLogMessages = [];
 var firebase = {};
@@ -47,9 +50,14 @@ function setUp() {
   });
   firebase.auth = {
     GoogleAuthProvider: {PROVIDER_ID: 'google.com'},
-    EmailAuthProvider: {PROVIDER_ID: 'password'},
+    EmailAuthProvider: {
+      EMAIL_LINK_SIGN_IN_METHOD: 'emailLink',
+      EMAIL_PASSWORD_SIGN_IN_METHOD: 'password',
+      PROVIDER_ID: 'password',
+    },
     PhoneAuthProvider: {PROVIDER_ID: 'phone'}
   };
+  testUtil = new firebaseui.auth.testing.FakeUtil().install();
 }
 
 
@@ -186,26 +194,45 @@ function testGetSignInSuccessUrl() {
 
 function testGetProviders_providerIds() {
   assertArrayEquals([], config.getProviders());
-  config.update('signInOptions',
-      ['google.com', 'github.com', 'unrecognized', 'twitter.com']);
-  // Check that unrecognized accounts are not included in the list.
+  config.update('signInOptions', ['google.com', 'github.com', 'twitter.com']);
+  // Check that predefined OAuth providers are included in the list in the
+  // correct order.
   assertArrayEquals(
       ['google.com', 'github.com', 'twitter.com'],
       config.getProviders());
 
   // Test when password accounts are to be enabled.
-  config.update('signInOptions',
-      ['google.com', 'password', 'unrecognized']);
+  config.update('signInOptions', ['google.com', 'password']);
   // Check that password accounts are included in the list in the correct
   // order.
   assertArrayEquals(['google.com', 'password'], config.getProviders());
 
   // Test when phone accounts are to be enabled.
-  config.update('signInOptions',
-      ['google.com', 'phone', 'unrecognized']);
+  config.update('signInOptions', ['google.com', 'phone']);
   // Check that phone accounts are included in the list in the correct
   // order.
   assertArrayEquals(['google.com', 'phone'], config.getProviders());
+
+  // Test when anonymous provider is to be enabled.
+  config.update('signInOptions', ['google.com', 'anonymous']);
+  // Check that anonymous provider is included in the list in the correct
+  // order.
+  assertArrayEquals(['google.com', 'anonymous'], config.getProviders());
+
+  // Test when generic provider is to be enabled.
+  config.update('signInOptions',
+                [
+                  'google.com',
+                  {
+                    'provider': 'microsoft.com',
+                    'providerName': 'Microsoft',
+                    'buttonColor': '#FFB6C1',
+                    'iconUrl': '<url-of-the-icon-of-the-sign-in-button>'
+                  }
+                ]);
+  // Check that generic provider is included in the list in the correct
+  // order.
+  assertArrayEquals(['google.com', 'microsoft.com'], config.getProviders());
 }
 
 
@@ -217,13 +244,123 @@ function testGetProviders_fullConfig() {
     },
     {'provider': 'github.com'},
     'facebook.com',
-    {'provider': 'unrecognized'},
+    {
+      'provider': 'microsoft.com',
+      'providerName': 'Microsoft',
+      'buttonColor': '#FFB6C1',
+      'iconUrl': '<url-of-the-icon-of-the-sign-in-button>'
+
+    },
     {'not a': 'valid config'},
-    {'provider': 'phone', 'recaptchaParameters': {'size': 'invisible'}}
+    {'provider': 'phone', 'recaptchaParameters': {'size': 'invisible'}},
+    {'provider': 'anonymous'}
   ]);
   // Check that invalid configs are not included.
-  assertArrayEquals(['google.com', 'github.com', 'facebook.com', 'phone'],
+  assertArrayEquals(
+      ['google.com', 'github.com', 'facebook.com', 'microsoft.com', 'phone',
+       'anonymous'],
       config.getProviders());
+}
+
+
+function testGetProviderConfigs() {
+  config.update('signInOptions', [
+    {
+      'provider': 'google.com',
+      'scopes': ['foo', 'bar'],
+      // providerName, buttonColor and iconUrl should be override with null.
+      'providerName': 'Google',
+      'buttonColor': '#FFB6C1',
+      'iconUrl': '<url-of-the-icon-of-the-sign-in-button>'
+    },
+    'facebook.com',
+    {
+      'provider': 'microsoft.com',
+      'providerName': 'Microsoft',
+      'buttonColor': '#FFB6C1',
+      'iconUrl': '<url-of-the-icon-of-the-sign-in-button>',
+      'loginHintKey': 'login_hint'
+    },
+    {'not a': 'valid config'},
+    {
+      'provider': 'yahoo.com',
+      'providerName': 'Yahoo',
+      'buttonColor': '#FFB6C1',
+      'iconUrl': '<url-of-the-icon-of-the-sign-in-button>'
+    }
+  ]);
+  var providerConfigs = config.getProviderConfigs();
+  assertEquals(4, providerConfigs.length);
+  assertObjectEquals({
+    providerId: 'google.com',
+  }, providerConfigs[0]);
+  assertObjectEquals({
+    providerId: 'facebook.com',
+  }, providerConfigs[1]);
+  assertObjectEquals({
+    providerId: 'microsoft.com',
+    providerName: 'Microsoft',
+    buttonColor: '#FFB6C1',
+    iconUrl: '<url-of-the-icon-of-the-sign-in-button>',
+    loginHintKey: 'login_hint'
+  }, providerConfigs[2]);
+  assertObjectEquals({
+    providerId: 'yahoo.com',
+    providerName: 'Yahoo',
+    buttonColor: '#FFB6C1',
+    iconUrl: '<url-of-the-icon-of-the-sign-in-button>',
+    loginHintKey: null
+  }, providerConfigs[3]);
+}
+
+
+function testGetConfigForProvider() {
+  config.update('signInOptions', [
+    {
+      'provider': 'google.com',
+      'scopes': ['foo', 'bar'],
+      // providerName, buttonColor and iconUrl should be override with null.
+      'providerName': 'Google',
+      'buttonColor': '#FFB6C1',
+      'iconUrl': '<url-of-the-icon-of-the-sign-in-button>'
+    },
+    'facebook.com',
+    {
+      'provider': 'microsoft.com',
+      'providerName': 'Microsoft',
+      'buttonColor': '#FFB6C1',
+      'iconUrl': '<url-of-the-icon-of-the-sign-in-button>',
+      'loginHintKey': 'login_hint'
+    },
+    {'not a': 'valid config'},
+    {
+      'provider': 'yahoo.com',
+      'providerName': 'Yahoo',
+      'buttonColor': '#FFB6C1',
+      'iconUrl': 'javascript:doEvilStuff()'
+    }
+  ]);
+  assertObjectEquals({
+    providerId: 'google.com'
+  }, config.getConfigForProvider('google.com'));
+  assertObjectEquals({
+    providerId: 'facebook.com'
+  }, config.getConfigForProvider('facebook.com'));
+  assertObjectEquals({
+    providerId: 'microsoft.com',
+    providerName: 'Microsoft',
+    buttonColor: '#FFB6C1',
+    iconUrl: '<url-of-the-icon-of-the-sign-in-button>',
+    loginHintKey: 'login_hint'
+  }, config.getConfigForProvider('microsoft.com'));
+  assertNull(config.getConfigForProvider('INVALID_ID'));
+  assertObjectEquals({
+    providerId: 'yahoo.com',
+    providerName: 'Yahoo',
+    buttonColor: '#FFB6C1',
+    iconUrl: 'about:invalid#zClosurez',
+    loginHintKey: null
+  }, config.getConfigForProvider('yahoo.com'));
 }
 
 
@@ -315,22 +452,26 @@ function testGetRecaptchaParameters() {
 }
 
 
-function testGetProviderCustomParameter_noSignInOptions() {
+function testGetProviderCustomParameters_noSignInOptions() {
   config.update('signInOptions', null);
   assertNull(config.getProviderCustomParameters('google.com'));
 }
 
 
-function testGetProviderCustomParameter_invalidIdp() {
+function testGetProviderCustomParameters_genericProvider() {
   config.update('signInOptions', [{
-    'provider': 'unrecognized',
-    'customParameters': ['foo', 'bar']
+    'provider': 'microsoft.com',
+    'providerName': 'Microsoft',
+    'buttonColor': '#FFB6C1',
+    'iconUrl': '<url-of-the-icon-of-the-sign-in-button>',
+    'customParameters': {'foo': 'bar'}
   }]);
-  assertNull(config.getProviderCustomParameters('unrecognized'));
+  assertObjectEquals({'foo': 'bar'},
+                     config.getProviderCustomParameters('microsoft.com'));
 }
 
 
-function testGetProviderCustomParameter_missingCustomParameters() {
+function testGetProviderCustomParameters_missingCustomParameters() {
   config.update('signInOptions', [{
     'provider': 'google.com',
   }]);
@@ -338,7 +479,7 @@ function testGetProviderCustomParameter_missingCustomParameters() {
 }
 
 
-function testGetProviderCustomParameter_multipleIdp() {
+function testGetProviderCustomParameters_multipleIdp() {
   config.update('signInOptions', [
     {
       'provider': 'google.com',
@@ -726,18 +867,242 @@ function testGetPhoneAuthDefaultNationalNumber_invalidIdp() {
 }
 
 
+function testGetPhoneAuthSelectedCountries_whitelist() {
+  config.update('signInOptions', [{
+    'provider': 'phone',
+    'whitelistedCountries': ['+44', 'us']
+  }]);
+  var countries = config.getPhoneAuthAvailableCountries();
+  var actualKeys = goog.array.map(countries, function(country) {
+    return country.e164_key;
+  });
+  assertSameElements(
+      ['44-GG-0', '44-IM-0', '44-JE-0', '44-GB-0', '1-US-0'], actualKeys);
+}
+
+
+function testGetPhoneAuthSelectedCountries_whitelist_overlap() {
+  config.update('signInOptions', [{
+    'provider': 'phone',
+    'whitelistedCountries': ['+44', 'GB']
+  }]);
+  var countries = config.getPhoneAuthAvailableCountries();
+  var actualKeys = goog.array.map(countries, function(country) {
+    return country.e164_key;
+  });
+  assertSameElements(['44-GG-0', '44-IM-0', '44-JE-0', '44-GB-0'], actualKeys);
+}
+
+
+function testGetPhoneAuthSelectedCountries_blacklist() {
+  config.update('signInOptions', [{
+    'provider': 'phone',
+    'blacklistedCountries': ['+44', 'US']
+  }]);
+  var countries = config.getPhoneAuthAvailableCountries();
+  // BlacklistedCountries should not appear in the available countries list.
+  var blacklistedKeys = ['44-GG-0', '44-IM-0', '44-JE-0', '44-GB-0', '1-US-0'];
+  for (var i = 0; i < countries.length; i++) {
+    assertNotContains(countries[i].e164_key, blacklistedKeys);
+  }
+}
+
+
+function testGetPhoneAuthSelectedCountries_blacklist_overlap() {
+  config.update('signInOptions', [{
+    'provider': 'phone',
+    'blacklistedCountries': ['+44', 'GB']
+  }]);
+  var countries = config.getPhoneAuthAvailableCountries();
+  // BlacklistedCountries should not appear in the available countries list.
+  var blacklistedKeys = ['44-GG-0', '44-IM-0', '44-JE-0', '44-GB-0'];
+  for (var i = 0; i < countries.length; i++) {
+    assertNotContains(countries[i].e164_key, blacklistedKeys);
+  }
+}
+
+
+function testGetPhoneAuthSelectedCountries_noBlackOrWhiteListProvided() {
+  config.update('signInOptions', [{
+    'provider': 'phone'
+  }]);
+  var countries = config.getPhoneAuthAvailableCountries();
+  assertSameElements(firebaseui.auth.data.country.COUNTRY_LIST, countries);
+}
+
+
+function testGetPhoneAuthSelectedCountries_emptyBlacklist() {
+  config.update('signInOptions', [{
+    'provider': 'phone',
+    'blacklistedCountries': []
+  }]);
+  var countries = config.getPhoneAuthAvailableCountries();
+  assertSameElements(firebaseui.auth.data.country.COUNTRY_LIST, countries);
+}
+
+
+function testUpdateConfig_phoneSignInOption_error() {
+  // Tests when both whitelist and blacklist are provided.
+  var error = assertThrows(function() {
+    config.update('signInOptions', [{
+      'provider': 'phone',
+      'blacklistedCountries': ['+44'],
+      'whitelistedCountries': ['+1']
+    }]);
+  });
+  assertEquals(
+      'Both whitelistedCountries and blacklistedCountries are provided.',
+      error.message);
+  // Tests when empty whitelist is provided.
+  error = assertThrows(function() {
+    config.update('signInOptions', [{
+      'provider': 'phone',
+      'whitelistedCountries': []
+    }]);
+  });
+  assertEquals(
+      'WhitelistedCountries must be a non-empty array.',
+      error.message);
+  // Tests string is provided as whitelistedCountries.
+  error = assertThrows(function() {
+    config.update('signInOptions', [{
+      'provider': 'phone',
+      'whitelistedCountries': 'US'
+    }]);
+  });
+  assertEquals(
+      'WhitelistedCountries must be a non-empty array.',
+      error.message);
+  // Tests falsy value is provided as whitelistedCountries.
+  error = assertThrows(function() {
+    config.update('signInOptions', [{
+      'provider': 'phone',
+      'whitelistedCountries': 0
+    }]);
+  });
+  assertEquals(
+      'WhitelistedCountries must be a non-empty array.',
+      error.message);
+  // Tests string is provided as blacklistedCountries.
+  error = assertThrows(function() {
+    config.update('signInOptions', [{
+      'provider': 'phone',
+      'blacklistedCountries': 'US'
+    }]);
+  });
+  assertEquals(
+      'BlacklistedCountries must be an array.',
+      error.message);
+  // Tests falsy value is provided as blacklistedCountries.
+  error = assertThrows(function() {
+    config.update('signInOptions', [{
+      'provider': 'phone',
+      'blacklistedCountries': 0
+    }]);
+  });
+  assertEquals(
+      'BlacklistedCountries must be an array.',
+      error.message);
+}
+
+
+function testSetConfig_phoneSignInOption_error() {
+  // Tests when both whitelist and blacklist are provided.
+  var error = assertThrows(function() {
+    config.setConfig({
+      'signInOptions': [{
+        'provider': 'phone',
+        'blacklistedCountries': ['+44'],
+        'whitelistedCountries': ['+1']
+      }]
+    });
+  });
+  assertEquals(
+      'Both whitelistedCountries and blacklistedCountries are provided.',
+      error.message);
+  // Tests when empty whitelist is provided.
+  error = assertThrows(function() {
+    config.setConfig({
+      'signInOptions': [{
+        'provider': 'phone',
+        'whitelistedCountries': []
+      }]
+    });
+  });
+  assertEquals(
+      'WhitelistedCountries must be a non-empty array.',
+      error.message);
+  // Tests string is provided as whitelistedCountries.
+  error = assertThrows(function() {
+    config.setConfig({
+      'signInOptions': [
+        {
+          'provider': 'phone',
+          'whitelistedCountries': 'US'
+        }]
+    });
+  });
+  assertEquals(
+      'WhitelistedCountries must be a non-empty array.',
+      error.message);
+  // Tests falsy value is provided as whitelistedCountries.
+  error = assertThrows(function() {
+    config.setConfig({
+      'signInOptions': [
+        {
+          'provider': 'phone',
+          'whitelistedCountries': 0
+        }]
+    });
+  });
+  assertEquals(
+      'WhitelistedCountries must be a non-empty array.',
+      error.message);
+  // Tests string is provided as blacklistedCountries.
+  error = assertThrows(function() {
+    config.setConfig({
+      'signInOptions': [
+        {
+          'provider': 'phone',
+          'blacklistedCountries': 'US'
+        }]
+    });
+  });
+  assertEquals(
+      'BlacklistedCountries must be an array.',
+      error.message);
+  // Tests falsy value is provided as blacklistedCountries.
+  error = assertThrows(function() {
+    config.setConfig({
+      'signInOptions': [
+        {
+          'provider': 'phone',
+          'blacklistedCountries': 0
+        }]
+    });
+  });
+  assertEquals(
+      'BlacklistedCountries must be an array.',
+      error.message);
+}
+
+
 function testGetProviderAdditionalScopes_noSignInOptions() {
   config.update('signInOptions', null);
   assertArrayEquals([], config.getProviderAdditionalScopes('google.com'));
 }
 
 
-function testGetProviderAdditionalScopes_invalidIdp() {
+function testGetProviderAdditionalScopes_genericProvider() {
   config.update('signInOptions', [{
-    'provider': 'unrecognized',
+    'provider': 'microsoft.com',
+    'providerName': 'Microsoft',
+    'buttonColor': '#FFB6C1',
+    'iconUrl': '<url-of-the-icon-of-the-sign-in-button>',
     'scopes': ['foo', 'bar']
   }]);
-  assertArrayEquals([], config.getProviderAdditionalScopes('unrecognized'));
+  assertArrayEquals(['foo', 'bar'],
+                    config.getProviderAdditionalScopes('microsoft.com'));
 }
 
 
@@ -793,12 +1158,32 @@ function testGetTosUrl() {
         'Privacy Policy URL is missing, the link will not be displayed.'
       ], warningLogMessages);
   config.update('privacyPolicyUrl', 'http://localhost/privacy_policy');
-  assertEquals('http://localhost/tos', config.getTosUrl());
+  var tosCallback = config.getTosUrl();
+  tosCallback();
+  testUtil.assertOpen('http://localhost/tos', '_blank');
   // No additional warning logged.
   assertArrayEquals(
       [
         'Privacy Policy URL is missing, the link will not be displayed.'
       ], warningLogMessages);
+  // Mock that Cordova InAppBrowser plugin is installed.
+  stub.replace(
+      firebaseui.auth.util,
+      'isCordovaInAppBrowserInstalled',
+      function() {
+        return true;
+      });
+  tosCallback = config.getTosUrl();
+  tosCallback();
+  // Target should be _system if Cordova InAppBrowser plugin is installed.
+  testUtil.assertOpen('http://localhost/tos', '_system');
+  // Tests if callback function is passed to tosUrl config.
+  tosCallback = function() {};
+  config.update('tosUrl', tosCallback);
+  assertEquals(tosCallback, config.getTosUrl());
+  // Tests if invalid tyoe is passed to tosUrl config.
+  config.update('tosUrl', 123456);
+  assertNull(config.getTosUrl());
 }
 
 
@@ -812,13 +1197,32 @@ function testGetPrivacyPolicyUrl() {
         'Term of Service URL is missing, the link will not be displayed.'
       ], warningLogMessages);
   config.update('tosUrl', 'http://localhost/tos');
-  assertEquals('http://localhost/privacy_policy', config.getPrivacyPolicyUrl());
+  var privacyPolicyCallback = config.getPrivacyPolicyUrl();
+  privacyPolicyCallback();
+  testUtil.assertOpen('http://localhost/privacy_policy', '_blank');
   // No additional warning logged.
   assertArrayEquals(
       [
         'Term of Service URL is missing, the link will not be displayed.'
       ], warningLogMessages);
-
+  // Mock that Cordova InAppBrowser plugin is installed.
+  stub.replace(
+      firebaseui.auth.util,
+      'isCordovaInAppBrowserInstalled',
+      function() {
+        return true;
+      });
+  privacyPolicyCallback = config.getPrivacyPolicyUrl();
+  privacyPolicyCallback();
+  // Target should be _system if Cordova InAppBrowser plugin is installed.
+  testUtil.assertOpen('http://localhost/privacy_policy', '_system');
+  // Tests if callback function is passed to privacyPolicyUrl config.
+  privacyPolicyCallback = function() {};
+  config.update('privacyPolicyUrl', privacyPolicyCallback);
+  assertEquals(privacyPolicyCallback, config.getPrivacyPolicyUrl());
+  // Tests if invalid tyoe is passed to tosUrl config.
+  config.update('privacyPolicyUrl', 123456);
+  assertNull(config.getPrivacyPolicyUrl());
 }
 
 
@@ -857,13 +1261,139 @@ function testRequireDisplayName_isTrueWithNonBooleanArgs() {
 }
 
 
+function testEmailProviderConfig_passwordAllowed() {
+  config.update('signInOptions', [
+    {
+      'provider': 'password'
+    }
+  ]);
+  assertTrue(config.isEmailPasswordSignInAllowed());
+  assertFalse(config.isEmailLinkSignInAllowed());
+  assertFalse(config.isEmailLinkSameDeviceForced());
+  assertNull(config.getEmailLinkSignInActionCodeSettings());
+
+  // Even if emailLinkSignIn is provided, it should still be ignored.
+  config.update('signInOptions', [
+    {
+      'provider': 'password',
+      'emailLinkSignIn': function() {
+        return {
+          'url': firebaseui.auth.util.getCurrentUrl()
+        };
+      }
+    }
+  ]);
+  assertTrue(config.isEmailPasswordSignInAllowed());
+  assertFalse(config.isEmailLinkSignInAllowed());
+  assertFalse(config.isEmailLinkSameDeviceForced());
+  assertNull(config.getEmailLinkSignInActionCodeSettings());
+}
+
+
+function testEmailProviderConfig_emailLinkAllowed() {
+  stub.replace(
+      firebaseui.auth.util,
+      'getCurrentUrl',
+      function() {
+        return 'https://www.example.com/path/?mode=foo&mode2=bar#a=1';
+      });
+  var originalActionCodeSettings = {
+    'url': 'https://other.com/handleSignIn',
+    'dynamicLinkDomain': 'example.page.link',
+    'iOS': {
+      'bundleId': 'com.example.ios'
+    },
+    'android': {
+      'packageName': 'com.example.android',
+      'installApp': true,
+      'minimumVersion': '12'
+    }
+  };
+  var expectedActionCodeSettings = {
+    'url': 'https://other.com/handleSignIn',
+    'handleCodeInApp': true,
+    'dynamicLinkDomain': 'example.page.link',
+    'iOS': {
+      'bundleId': 'com.example.ios'
+    },
+    'android': {
+      'packageName': 'com.example.android',
+      'installApp': true,
+      'minimumVersion': '12'
+    }
+  };
+
+  config.update('signInOptions', [
+    {
+      'provider': 'password',
+      'signInMethod': firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD
+    }
+  ]);
+  assertFalse(config.isEmailPasswordSignInAllowed());
+  assertTrue(config.isEmailLinkSignInAllowed());
+  assertFalse(config.isEmailLinkSameDeviceForced());
+  assertObjectEquals(
+      {
+        'url': firebaseui.auth.util.getCurrentUrl(),
+        'handleCodeInApp': true
+      },
+      config.getEmailLinkSignInActionCodeSettings());
+
+  // Same device flow and explicit actionCodeUrl.
+  config.update('signInOptions', [
+    {
+      'provider': 'password',
+      'signInMethod': firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD,
+      'forceSameDevice': true,
+      'emailLinkSignIn': function() {
+        return originalActionCodeSettings;
+      }
+    }
+  ]);
+  assertFalse(config.isEmailPasswordSignInAllowed());
+  assertTrue(config.isEmailLinkSignInAllowed());
+  assertTrue(config.isEmailLinkSameDeviceForced());
+  assertObjectEquals(
+      expectedActionCodeSettings,
+      config.getEmailLinkSignInActionCodeSettings());
+
+  // Relative URL in actionCodeUrl.
+  config.update('signInOptions', [
+    {
+      'provider': 'password',
+      'signInMethod': firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD,
+      'forceSameDevice': true,
+      'emailLinkSignIn': function() {
+        return {
+          // Relative path will be resolved relative to current URL.
+          'url': '../completeSignIn?a=1#b=2'
+        };
+      }
+    }
+  ]);
+  assertFalse(config.isEmailPasswordSignInAllowed());
+  assertTrue(config.isEmailLinkSignInAllowed());
+  assertTrue(config.isEmailLinkSameDeviceForced());
+  assertObjectEquals(
+      {
+        'url': 'https://www.example.com/completeSignIn?a=1#b=2',
+        'handleCodeInApp': true
+      },
+      config.getEmailLinkSignInActionCodeSettings());
+}
+
+
 function testSetConfig() {
   config.setConfig({
     tosUrl: 'www.testUrl1.com',
     privacyPolicyUrl: 'www.testUrl2.com'
   });
-  assertEquals('www.testUrl1.com', config.getTosUrl());
-  assertEquals('www.testUrl2.com', config.getPrivacyPolicyUrl());
+  var tosCallback = config.getTosUrl();
+  tosCallback();
+  testUtil.assertOpen('www.testUrl1.com', '_blank');
+  var privacyPolicyCallback = config.getPrivacyPolicyUrl();
+  privacyPolicyCallback();
+  testUtil.assertOpen('www.testUrl2.com', '_blank');
 }
 
 

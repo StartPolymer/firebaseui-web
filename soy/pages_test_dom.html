@@ -2,7 +2,6 @@
 
 <style>
 table {
-  border-collapse: collapse;
   margin: 0 0 40px;
   width: 100%;
 }
@@ -23,7 +22,7 @@ td {
 
   <!-- signIn -->
   <tr>
-    <td rowspan="4">signIn</td>
+    <td rowspan="6">signIn</td>
     <td><div id="sign-in"></div></td>
   </tr>
   <tr>
@@ -44,7 +43,7 @@ td {
 
   <!-- passwordSignIn -->
   <tr>
-    <td>passwordSignIn</td>
+    <td rowspan="2">passwordSignIn</td>
     <td><div id="password-sign-in"></div></td>
   </tr>
   <tr>
@@ -61,6 +60,45 @@ td {
   </tr>
   <tr>
     <td><div id="password-sign-up-tos"></div></td>
+  </tr>
+
+  <!-- blank -->
+  <tr>
+    <td rowspan="2">blank</td>
+    <td><div id="blank"></div></td>
+  </tr>
+  <tr>
+    <td><div id="blank-busy"></div></td>
+  </tr>
+
+  <!-- emailLinkSignInSent -->
+  <tr>
+    <td>emailLinkSignInSent</td>
+    <td><div id="email-link-sign-in-sent"></div></td>
+  </tr>
+
+  <!-- emailNotReceived -->
+  <tr>
+    <td>emailNotReceived</td>
+    <td><div id="email-not-received"></div></td>
+  </tr>
+
+  <!-- emailLinkSignInConfirmation -->
+  <tr>
+    <td>emailLinkSignInConfirmation</td>
+    <td><div id="email-link-sign-in-confirmation"></div></td>
+  </tr>
+
+  <!-- differentDeviceError -->
+  <tr>
+    <td>differentDeviceError</td>
+    <td><div id="different-device-error"></div></td>
+  </tr>
+
+  <!-- anonymousUserMismatch -->
+  <tr>
+    <td>anonymousUserMismatch</td>
+    <td><div id="anonymous-user-mismatch"></div></td>
   </tr>
 
   <!-- passwordRecovery -->
@@ -90,10 +128,28 @@ td {
     <td><div id="password-linking"></div></td>
   </tr>
 
+  <!-- emailLinkSignInLinking -->
+  <tr>
+    <td>emailLinkSignInLinking</td>
+    <td><div id="email-link-sign-in-linking"></div></td>
+  </tr>
+
+  <!-- emailLinkSignInLinkingDifferentDevice -->
+  <tr>
+    <td>emailLinkSignInLinkingDifferentDevice</td>
+    <td><div id="email-link-sign-in-linking-different-device"></div></td>
+  </tr>
+
   <!-- federatedLinking -->
   <tr>
     <td>federatedLinking</td>
     <td><div id="federated-linking"></div></td>
+  </tr>
+
+  <!-- unsupportedProvider -->
+  <tr>
+    <td>unsupportedProvider</td>
+    <td><div id="unsupported-provider"></div></td>
   </tr>
 
   <!-- passwordReset -->
@@ -172,13 +228,16 @@ td {
 
   <!-- providerSignIn -->
   <tr>
-    <td>providerSignIn</td>
+    <td rowspan="2">providerSignIn</td>
     <td><div id="provider-sign-in"></div></td>
+  </tr>
+  <tr>
+    <td><div id="provider-sign-in-busy"></div></td>
   </tr>
 
   <!-- phoneSignInStart -->
   <tr>
-    <td rowspan="2">phoneSignInStart</td>
+    <td rowspan="4">phoneSignInStart</td>
     <td><div id="phone-sign-in-start-invisible-recaptcha"></div></td>
   </tr>
   <tr>
@@ -186,6 +245,9 @@ td {
   </tr>
   <tr>
     <td><div id="phone-sign-in-start-full-message"></div></td>
+  </tr>
+  <tr>
+    <td><div id="phone-sign-in-start-no-cancel-button"></div></td>
   </tr>
 
   <!-- phoneSignInFinish-->

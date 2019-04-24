@@ -36,8 +36,13 @@ var IJ_DATA_ = {
   'twitterLogo': '../image/twitter.svg',
   'passwordLogo': '../image/mail.svg',
   'phoneLogo': '../image/phone.svg',
-  'tosUrl': 'tos',
-  'privacyPolicyUrl': 'privacy_policy'
+  'anonymousLogo': '../image/anonymous.png',
+  'tosCallback': function() {
+    window.location.assign('/tos');
+  },
+  'privacyPolicyCallback': function() {
+    window.location.assign('/privacyPolicy');
+  }
 };
 
 
@@ -175,6 +180,65 @@ function testPasswordSignUp_fullMessage() {
 }
 
 
+function testBlank() {
+  var root = goog.dom.getElement('blank');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.blank, {}, IJ_DATA_);
+}
+
+function testBlank_busy() {
+  var root = goog.dom.getElement('blank-busy');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.blank, {}, IJ_DATA_);
+  var busy = goog.soy.renderAsElement(
+      firebaseui.auth.soy2.element.busyIndicator, {useSpinner: true});
+  root.children[0].appendChild(busy);
+}
+
+
+function testEmailLinkSignInSent() {
+  var root = goog.dom.getElement('email-link-sign-in-sent');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.emailLinkSignInSent, {
+        'email': 'user@example.com'
+      },
+      IJ_DATA_);
+}
+
+
+function testEmailNotReceived() {
+  var root = goog.dom.getElement('email-not-received');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.emailNotReceived, {},
+      IJ_DATA_);
+}
+
+
+function testEmailLinkSignInConfirmation() {
+  var root = goog.dom.getElement('email-link-sign-in-confirmation');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.emailLinkSignInConfirmation,
+      {'email': 'user@example.com'},
+      IJ_DATA_);
+}
+
+
+function testDifferentDeviceError() {
+  var root = goog.dom.getElement('different-device-error');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.differentDeviceError, {},
+      IJ_DATA_);
+}
+
+
+function testAnonymousUserMismatch() {
+  var root = goog.dom.getElement('anonymous-user-mismatch');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.anonymousUserMismatch, {},
+      IJ_DATA_);
+}
+
+
 function testPasswordRecovery() {
   var root = goog.dom.getElement('password-recovery');
   goog.soy.renderElement(
@@ -217,13 +281,53 @@ function testPasswordLinking() {
 }
 
 
+function testEmailLinkSignInLinking() {
+  var root = goog.dom.getElement('email-link-sign-in-linking');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.emailLinkSignInLinking, {
+        email: 'user@example.com',
+        providerConfig:  {
+          providerId: 'facebook.com',
+          providerName: null,
+          buttonColor: null,
+          iconUrl: null
+        }
+      },
+      IJ_DATA_);
+}
+
+
+function testEmailLinkSignInLinkingDifferentDevice() {
+  var root = goog.dom.getElement('email-link-sign-in-linking-different-device');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.emailLinkSignInLinkingDifferentDevice, {
+        providerConfig:  {
+          providerId: 'facebook.com'
+        }
+      },
+      IJ_DATA_);
+}
+
+
 function testFederatedLinking() {
   var root = goog.dom.getElement('federated-linking');
   goog.soy.renderElement(
       root, firebaseui.auth.soy2.page.federatedLinking, {
-        'email': 'user@example.com',
-        'siteName': 'Example Site',
-        'providerId': 'google.com'
+        email: 'user@example.com',
+        siteName: 'Example Site',
+        providerConfig:  {
+          providerId: 'facebook.com'
+        }
+      },
+      IJ_DATA_);
+}
+
+
+function testUnsupportedProvider() {
+  var root = goog.dom.getElement('unsupported-provider');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.unsupportedProvider, {
+        'email': 'user@example.com'
       },
       IJ_DATA_);
 }
@@ -354,10 +458,77 @@ function testProviderSignIn() {
   var root = goog.dom.getElement('provider-sign-in');
   goog.soy.renderElement(
       root, firebaseui.auth.soy2.page.providerSignIn, {
-        'providerIds':
-            ['password', 'phone', 'google.com', 'github.com', 'facebook.com']
+        'providerConfigs': [
+          {
+            providerId: 'password'
+          },
+          {
+            providerId: 'phone'
+          },
+          {
+            providerId: 'google.com'
+          },
+          {
+            providerId: 'github.com'
+          },
+          {
+            providerId: 'facebook.com'
+          },
+          {
+            providerId: 'twitter.com'
+          },
+          {
+            providerId: 'anonymous'
+          },
+          {
+            providerId: 'microsoft.com',
+            providerName: 'Microsoft',
+            buttonColor: '#FFB6C1',
+            iconUrl: 'icon-url'
+          }]
       },
       IJ_DATA_);
+}
+
+
+function testProviderSignIn_busy() {
+  var root = goog.dom.getElement('provider-sign-in-busy');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.providerSignIn, {
+        'providerConfigs': [
+          {
+            providerId: 'password'
+          },
+          {
+            providerId: 'phone'
+          },
+          {
+            providerId: 'google.com'
+          },
+          {
+            providerId: 'github.com'
+          },
+          {
+            providerId: 'facebook.com'
+          },
+          {
+            providerId: 'twitter.com'
+          },
+          {
+            providerId: 'anonymous'
+          },
+          {
+            providerId: 'microsoft.com',
+            providerName: 'Microsoft',
+            buttonColor: '#FFB6C1',
+            iconUrl: 'icon-url',
+            loginHintKey: 'login_hint'
+          }]
+      },
+      IJ_DATA_);
+  var busy = goog.soy.renderAsElement(
+      firebaseui.auth.soy2.element.busyIndicator, {useSpinner: true});
+  root.children[0].appendChild(busy);
 }
 
 
@@ -365,7 +536,7 @@ function testPhoneSignInStartInvisibleRecaptcha() {
   var root = goog.dom.getElement('phone-sign-in-start-invisible-recaptcha');
   goog.soy.renderElement(
       root, firebaseui.auth.soy2.page.phoneSignInStart,
-      {enableVisibleRecaptcha: false}, IJ_DATA_);
+      {enableVisibleRecaptcha: false, displayCancelButton: true}, IJ_DATA_);
 }
 
 
@@ -373,7 +544,7 @@ function testPhoneSignInStartVisibleRecaptcha() {
   var root = goog.dom.getElement('phone-sign-in-start-visible-recaptcha');
   goog.soy.renderElement(
       root, firebaseui.auth.soy2.page.phoneSignInStart,
-      {enableVisibleRecaptcha: true}, IJ_DATA_);
+      {enableVisibleRecaptcha: true, displayCancelButton: true}, IJ_DATA_);
   loadRecaptcha(root);
 }
 
@@ -384,8 +555,17 @@ function testPhoneSignInStart_fullMessage() {
       root, firebaseui.auth.soy2.page.phoneSignInStart,
       {
         enableVisibleRecaptcha: false,
+        displayCancelButton: true,
         displayFullTosPpMessage: true
       }, IJ_DATA_);
+}
+
+
+function testPhoneSignInStart_noCancelButton() {
+  var root = goog.dom.getElement('phone-sign-in-start-no-cancel-button');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.page.phoneSignInStart,
+      {enableVisibleRecaptcha: false, displayCancelButton: false}, IJ_DATA_);
 }
 
 

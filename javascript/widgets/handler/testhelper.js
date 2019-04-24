@@ -22,25 +22,33 @@ goog.provide('firebaseui.auth.widget.handler.testHelper');
 goog.setTestOnly('firebaseui.auth.widget.handler.testHelper');
 
 goog.require('firebaseui.auth.Account');
+goog.require('firebaseui.auth.ActionCodeUrlBuilder');
 goog.require('firebaseui.auth.AuthUI');
 goog.require('firebaseui.auth.CredentialHelper');
+goog.require('firebaseui.auth.EventDispatcher');
 goog.require('firebaseui.auth.OAuthResponse');
+goog.require('firebaseui.auth.PendingEmailCredential');
 goog.require('firebaseui.auth.callback.signInSuccess');
 goog.require('firebaseui.auth.idp');
 goog.require('firebaseui.auth.soy2.strings');
+goog.require('firebaseui.auth.storage');
 goog.require('firebaseui.auth.testing.FakeAcClient');
 goog.require('firebaseui.auth.testing.FakeAppClient');
+goog.require('firebaseui.auth.testing.FakeCookieStorage');
 goog.require('firebaseui.auth.testing.FakeUtil');
 goog.require('firebaseui.auth.testing.RecaptchaVerifier');
 goog.require('firebaseui.auth.ui.page.Base');
 goog.require('firebaseui.auth.util');
 goog.require('firebaseui.auth.widget.Config');
 goog.require('goog.Promise');
+goog.require('goog.array');
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
 goog.require('goog.dom.classlist');
 goog.require('goog.dom.forms');
+goog.require('goog.events');
 goog.require('goog.events.KeyCodes');
+goog.require('goog.object');
 goog.require('goog.testing.MockClock');
 goog.require('goog.testing.PropertyReplacer');
 goog.require('goog.testing.events');
@@ -124,6 +132,7 @@ var signInCallbackOperationType;
 var signInCallbackRedirectUrl;
 var uiShownCallbackCount;
 var signInFailureCallback;
+var tosCallback;
 
 var callbackStub = new goog.testing.PropertyReplacer();
 
@@ -133,7 +142,23 @@ var signInOptionsWithScopes = [
     'scopes': ['googl1', 'googl2'],
     'customParameters': {'prompt': 'select_account'}
   },
-  {'provider': 'facebook.com', 'scopes': ['fb1', 'fb2']}, 'password'
+  {'provider': 'facebook.com', 'scopes': ['fb1', 'fb2']},
+  'password'
+];
+
+var emailLinkSignInOptions = [
+  {
+    'provider': 'password',
+    'signInMethod': 'emailLink',
+    'emailLinkSignIn': function() {
+      return {
+        'url': 'https://www.example.com/completeSignIn',
+        'handleCodeInApp': true
+      };
+    }
+  },
+  'google.com',
+  'facebook.com'
 ];
 
 var testStubs = new goog.testing.PropertyReplacer();
@@ -153,6 +178,9 @@ var firebase = {};
 var getApp;
 var testComponent;
 
+var lastRevertLanguageCodeCall;
+var pageEventDispatcher;
+
 
 function setUp() {
   // Used to initialize internal auth instance.
@@ -167,44 +195,6 @@ function setUp() {
   app = new firebaseui.auth.AuthUI(externalAuth, appId);
   // Install internal temporary auth instance.
   testAuth = app.getAuth().install();
-  container = goog.dom.createDom(goog.dom.TagName.DIV);
-  document.body.appendChild(container);
-  // Test component used for setLoggedIn tests which requires a component.
-  container2 = goog.dom.createDom(goog.dom.TagName.DIV);
-  document.body.appendChild(container2);
-  testComponent = new firebaseui.auth.ui.page.Base(function() {
-    return '<div></div>';
-  });
-  // Render test component in container2.
-  testComponent.render(container2);
-  testAc = new firebaseui.auth.testing.FakeAcClient().install();
-  testUtil = new firebaseui.auth.testing.FakeUtil().install();
-  signInCallbackUser = undefined;
-  signInCallbackRedirectUrl = undefined;
-  signInCallbackCredential = undefined;
-  signInCallbackAdditionalUserInfo = undefined;
-  signInCallbackOperationType = undefined;
-  uiShownCallbackCount = 0;
-  // Define recorded signInFailure callback.
-  signInFailureCallback = goog.testing.recordFunction(function() {
-    return goog.Promise.resolve();
-  });
-  app.setConfig({
-    'signInSuccessUrl': 'http://localhost/home',
-    'widgetUrl': 'http://localhost/firebaseui-widget',
-    'signInOptions': ['google.com', 'facebook.com', 'password'],
-    'siteName': 'Test Site',
-    'popupMode': false,
-    'tosUrl': 'http://localhost/tos',
-    'privacyPolicyUrl': 'http://localhost/privacy_policy',
-    'credentialHelper': firebaseui.auth.CredentialHelper.ACCOUNT_CHOOSER_COM,
-    'callbacks': {
-      'signInFailure': signInFailureCallback
-    },
-
-  });
-  window.localStorage.clear();
-  window.sessionStorage.clear();
 
   mockClock.install();
   // For testing simulate accountchooser.com js is loaded to prevent loading of
@@ -220,10 +210,8 @@ function setUp() {
   // Record accountchooser.com callback calls.
   accountChooserInvokedCallback = goog.testing.recordFunction();
   accountChooserResultCallback = goog.testing.recordFunction();
-  // Just pass the credential object through for the test.
-  testStubs.replace(firebaseui.auth.idp, 'getAuthCredential', function(obj) {
-    return obj;
-  });
+  testStubs.replace(firebaseui.auth.idp, 'getAuthCredential',
+                    createMockCredential);
   // Build mock auth providers.
   firebase['auth'] = {};
   // Mock reCAPTCHA verifier.
@@ -258,28 +246,67 @@ function setUp() {
       };
     }
   }
-  // Initialize after getAuthCredential stub.
-  authCredential = firebaseui.auth.idp.getAuthCredential(
+  firebase['auth']['SAMLAuthProvider'] = function(providerId) {
+    this.providerId = providerId;
+    this.customParameters = {};
+  };
+  firebase['auth']['SAMLAuthProvider'].prototype.setCustomParameters =
+      function(customParameters) {
+    this.customParameters = customParameters;
+    return this;
+  };
+  firebase['auth']['OAuthProvider'] = function(providerId) {
+    this.providerId = providerId;
+    this.scopes = [];
+    this.customParameters = {};
+  };
+  firebase['auth']['OAuthProvider'].prototype.setCustomParameters =
+      function(customParameters) {
+    this.customParameters = customParameters;
+    return this;
+  };
+  firebase['auth']['OAuthProvider'].prototype.addScope =
+      function(scope) {
+    this.scopes.push(scope);
+    return this;
+  };
+  // Initialize mock credentials.
+  authCredential = createMockCredential(
       {'accessToken': 'facebookAccessToken', 'providerId': 'facebook.com'});
-  federatedCredential = firebaseui.auth.idp.getAuthCredential(
+  federatedCredential = createMockCredential(
       {'accessToken': 'googleAccessToken', 'providerId': 'google.com'});
   // Simulate email auth provider credential.
   firebase['auth']['EmailAuthProvider'] =
       firebase['auth']['EmailAuthProvider'] || {};
   firebase['auth']['EmailAuthProvider']['credential'] = function(
       email, password) {
-    return {'email': email, 'password': password, 'providerId': 'password'};
+    return {
+      'email': email, 'password': password, 'providerId': 'password',
+      'signInMethod': 'password'
+    };
+  };
+  firebase['auth']['EmailAuthProvider']['credentialWithLink'] = function(
+      email, link) {
+    return {
+      'email': email, 'link': link, 'providerId': 'password',
+      'signInMethod': 'emailLink'
+    };
   };
   // Simulate Google Auth Provider credential.
   firebase['auth']['GoogleAuthProvider'] =
       firebase['auth']['GoogleAuthProvider'] || {};
   firebase['auth']['GoogleAuthProvider']['credential'] = function(
       idToken, accessToken) {
-    return {
+    return createMockCredential({
       'idToken': idToken,
       'accessToken': accessToken,
       'providerId': 'google.com'
-    };
+    });
+  };
+  firebase['auth']['AuthCredential'] = {
+    'fromJSON': function(json) {
+      return createMockCredential(json);
+    }
   };
   getApp = function() {
     return app;
@@ -308,6 +335,59 @@ function setUp() {
       };
     }
   };
+  container = goog.dom.createDom(goog.dom.TagName.DIV);
+  document.body.appendChild(container);
+  // Test component used for setLoggedIn tests which requires a component.
+  container2 = goog.dom.createDom(goog.dom.TagName.DIV);
+  document.body.appendChild(container2);
+  testComponent = new firebaseui.auth.ui.page.Base(function() {
+    return '<div></div>';
+  });
+  // Render test component in container2.
+  testComponent.render(container2);
+  testAc = new firebaseui.auth.testing.FakeAcClient().install();
+  testUtil = new firebaseui.auth.testing.FakeUtil().install();
+  signInCallbackUser = undefined;
+  signInCallbackRedirectUrl = undefined;
+  signInCallbackCredential = undefined;
+  signInCallbackAdditionalUserInfo = undefined;
+  signInCallbackOperationType = undefined;
+  uiShownCallbackCount = 0;
+  // Define recorded signInFailure callback.
+  signInFailureCallback = goog.testing.recordFunction(function() {
+    return goog.Promise.resolve();
+  });
+  tosCallback = goog.testing.recordFunction();
+  app.setConfig({
+    'signInSuccessUrl': 'http://localhost/home',
+    'widgetUrl': 'http://localhost/firebaseui-widget',
+    'signInOptions': ['google.com', 'facebook.com', 'password', 'github.com',
+                      {
+                        'provider': 'microsoft.com',
+                        'loginHintKey': 'login_hint',
+                        'buttonColor': '#2F2F2F',
+                        'iconUrl': '<icon-url>'
+                      },
+                      {
+                        'provider': 'saml.provider',
+                        'providerName': 'SAML Provider',
+                        'buttonColor': '#2F2F2F',
+                        'iconUrl': '<icon-url>'
+                      }],
+    'siteName': 'Test Site',
+    'popupMode': false,
+    'tosUrl': tosCallback,
+    'privacyPolicyUrl': 'http://localhost/privacy_policy',
+    'credentialHelper': firebaseui.auth.CredentialHelper.ACCOUNT_CHOOSER_COM,
+    'callbacks': {
+      'signInFailure': signInFailureCallback
+    },
+
+  });
+  // Install mock cookie storage.
+  testCookieStorage = new firebaseui.auth.testing.FakeCookieStorage().install();
+  window.localStorage.clear();
+  window.sessionStorage.clear();
   // Remove any grecaptcha mocks.
   delete goog.global['grecaptcha'];
   // Record all calls to One-Tap show and cancel APIs.
@@ -319,6 +399,16 @@ function setUp() {
       firebaseui.auth.AuthUI.prototype,
       'cancelOneTapSignIn',
       goog.testing.recordFunction());
+  // Record calls to revertLanguageCode.
+  lastRevertLanguageCodeCall = null;
+  testStubs.replace(
+      firebaseui.auth.AuthUI.prototype,
+      'revertLanguageCode',
+      function() {
+        lastRevertLanguageCodeCall = this;
+      });
+  pageEventDispatcher = new firebaseui.auth.EventDispatcher(container);
+  pageEventDispatcher.register();
 }
 
 
@@ -345,6 +435,28 @@ function tearDown() {
   }
   // Reset AuthUI internals.
   firebaseui.auth.AuthUI.resetAllInternals();
+  pageEventDispatcher.unregister();
+}
+
+
+/**
+ * @return {!goog.Promise<void>} A promise that resolves on next page change.
+ */
+function waitForPageChange() {
+  return new goog.Promise(function(resolve, reject) {
+    goog.events.listenOnce(
+        pageEventDispatcher,
+        'pageEnter',
+        function(event) {
+          resolve();
+        });
+    goog.events.listenOnce(
+        pageEventDispatcher,
+        'pageExit',
+        function(event) {
+          resolve();
+        });
+  });
 }
 
 
@@ -371,6 +483,101 @@ function simulateCordovaEnvironment() {
       function() {
         return 'file:';
       });
+}
+
+
+/**
+ * Returns a mock credential object with toJSON method.
+ * @param {!Object} credentialObject The plain credential object.
+ * @return {!Object} The fake Auth credential.
+ */
+function createMockCredential(credentialObject) {
+  var copy = goog.object.clone(credentialObject);
+   goog.object.extend(credentialObject, {
+     'toJSON': function() {
+       return copy;
+     }
+   });
+   return credentialObject;
+}
+
+
+/**
+ * Build action code settings.
+ * @param {boolean=} opt_forceSameDevice Whether to force same device.
+ * @param {?string=} opt_providerId The provider ID for linking flow.
+ * @param {?string=} opt_anonymousUid The anonymous user's uid.
+ * @return {!firebase.auth.ActionCodeSettings} The action code settings.
+ */
+function buildActionCodeSettings(
+    opt_forceSameDevice, opt_providerId, opt_anonymousUid) {
+  testStubs.replace(
+      firebaseui.auth.util,
+      'generateRandomAlphaNumericString',
+      function(size) {
+        assertEquals(32, size);
+        return 'SESSIONID';
+      });
+  var builder = new firebaseui.auth.ActionCodeUrlBuilder(
+      'https://www.example.com/completeSignIn');
+  builder.setSessionId('SESSIONID');
+  if (opt_providerId) {
+    builder.setProviderId(opt_providerId);
+  }
+  builder.setForceSameDevice(opt_forceSameDevice || false);
+  if (opt_anonymousUid) {
+    builder.setAnonymousUid(opt_anonymousUid);
+  }
+  return {
+    'url': builder.toString(),
+    'handleCodeInApp': true
+  };
+}
+
+
+/**
+ * Generates the email link sign-in URL with the requested parameters.
+ * @param {string} sessionId The session identifier.
+ * @param {?string=} opt_uid The optional anonymous user ID to be upgraded.
+ * @param {?string=} opt_providerId The optional provider ID to link.
+ * @param {boolean=} opt_forceSameDevice Whether to force same device flow.
+ * @return {string} The generated email action link.
+ */
+function generateSignInLink(
+    sessionId, opt_uid, opt_providerId, opt_forceSameDevice) {
+  var url = 'https://www.example.com/signIn?mode=' +
+      'signIn&apiKey=API_KEY&oobCode=ACTION_CODE';
+  var builder = new firebaseui.auth.ActionCodeUrlBuilder(url);
+  builder.setSessionId(sessionId);
+  if (opt_uid) {
+    builder.setAnonymousUid(opt_uid);
+  }
+  if (opt_providerId) {
+    builder.setProviderId(opt_providerId);
+  }
+  builder.setForceSameDevice(!!opt_forceSameDevice);
+  return builder.toString();
+}
+
+
+/**
+ * Creates and saves the credentials, necessary for the view to load.
+ * @param {string} sessionId The session identifier.
+ * @param {?string=} opt_email The optional associated email to save in storage.
+ * @param {?firebase.auth.AuthCredential=} opt_credential The optional
+ *     credential to save in storage.
+ */
+function setupEmailLinkSignIn(sessionId, opt_email, opt_credential) {
+  if (opt_email) {
+    firebaseui.auth.storage.setEmailForSignIn(
+        sessionId, opt_email, app.getAppId());
+  }
+  if (opt_email && opt_credential) {
+    var pendingEmailCred = new firebaseui.auth.PendingEmailCredential(
+        opt_email, opt_credential);
+    firebaseui.auth.storage.setEncryptedPendingCredential(
+        sessionId, pendingEmailCred, app.getAppId());
+  }
 }
 
 
@@ -444,6 +651,26 @@ function clickChangePhoneNumberLink() {
  */
 function clickResendLink() {
   var el = goog.dom.getElementByClass('firebaseui-id-resend-link', container);
+  goog.testing.events.fireClickSequence(el);
+}
+
+
+/**
+ * Triggers a click on the resend email for sign-in link.
+ */
+function clickResendEmailLink() {
+  var el = goog.dom.getElementByClass(
+      'firebaseui-id-resend-email-link', container);
+  goog.testing.events.fireClickSequence(el);
+}
+
+
+/**
+ * Triggers a click on the trouble getting email link.
+ */
+function clickTroubleGettingEmailLink() {
+  var el = goog.dom.getElementByClass(
+      'firebaseui-id-trouble-getting-email-link', container);
   goog.testing.events.fireClickSequence(el);
 }
 
@@ -639,9 +866,48 @@ function getPhoneConfirmationCodeErrorMessage() {
 }
 
 
+/** @return {!Array<string>} The e164 keys of country selector buttons. */
+function getKeysForCountrySelectorButtons() {
+  var buttons = goog.dom.getElementsByClass(
+      'firebaseui-list-box-dialog-button');
+  return goog.array.map(buttons, function(button) {
+    return button.getAttribute('data-listboxid');
+  });
+}
+
+
 /**
- * @param {?string} tosUrl
- * @param {?string} privacyPolicyUrl
+ * @param {?string|function()|undefined} tosUrl
+ * @param {?string|function()|undefined} privacyPolicyUrl
+ * @private
+ */
+function assertTosPpLinkClicked_(tosUrl, privacyPolicyUrl) {
+  var tosLinkElement = goog.dom.getElementByClass(
+    'firebaseui-tos-link', container);
+  var ppLinkElement = goog.dom.getElementByClass(
+    'firebaseui-pp-link', container);
+  if (goog.isFunction(tosUrl)) {
+    assertEquals(0, tosUrl.getCallCount());
+    goog.testing.events.fireClickSequence(tosLinkElement);
+    assertEquals(1, tosUrl.getCallCount());
+  } else {
+    goog.testing.events.fireClickSequence(tosLinkElement);
+    testUtil.assertOpen(tosUrl, '_blank');
+  }
+  if (goog.isFunction(privacyPolicyUrl)) {
+    assertEquals(0, privacyPolicyUrl.getCallCount());
+    goog.testing.events.fireClickSequence(ppLinkElement);
+    assertEquals(1, privacyPolicyUrl.getCallCount());
+  } else {
+    goog.testing.events.fireClickSequence(ppLinkElement);
+    testUtil.assertOpen(privacyPolicyUrl, '_blank');
+  }
+}
+
+
+/**
+ * @param {?string|function()|undefined} tosUrl
+ * @param {?string|function()|undefined} privacyPolicyUrl
  */
 function assertTosPpFullMessage(tosUrl, privacyPolicyUrl) {
   var element = goog.dom.getElementByClass('firebaseui-tos', container);
@@ -649,19 +915,14 @@ function assertTosPpFullMessage(tosUrl, privacyPolicyUrl) {
     assertNull(element);
   } else {
     assertTrue(element.classList.contains('firebaseui-tospp-full-message'));
-    var tosLinkElement = goog.dom.getElementByClass(
-      'firebaseui-tos-link', container);
-    var ppLinkElement = goog.dom.getElementByClass(
-      'firebaseui-pp-link', container);
-    assertEquals(tosUrl, tosLinkElement.href);
-    assertEquals(privacyPolicyUrl, ppLinkElement.href);
+    assertTosPpLinkClicked_(tosUrl, privacyPolicyUrl);
   }
 }
 
 
 /**
- * @param {?string} tosUrl
- * @param {?string} privacyPolicyUrl
+ * @param {?string|function()|undefined} tosUrl
+ * @param {?string|function()|undefined} privacyPolicyUrl
  */
 function assertTosPpFooter(tosUrl, privacyPolicyUrl) {
   var element = goog.dom.getElementByClass('firebaseui-tos-list', container);
@@ -669,19 +930,14 @@ function assertTosPpFooter(tosUrl, privacyPolicyUrl) {
     assertNull(element);
   } else {
     assertTrue(element.classList.contains('firebaseui-tos-list'));
-    var tosLinkElement = goog.dom.getElementByClass(
-      'firebaseui-tos-link', container);
-    var ppLinkElement = goog.dom.getElementByClass(
-      'firebaseui-pp-link', container);
-    assertEquals(tosUrl, tosLinkElement.href);
-    assertEquals(privacyPolicyUrl,ppLinkElement.href);
+    assertTosPpLinkClicked_(tosUrl, privacyPolicyUrl);
   }
 }
 
 
 /**
- * @param {?string} tosUrl
- * @param {?string} privacyPolicyUrl
+ * @param {?string|function()|undefined} tosUrl
+ * @param {?string|function()|undefined} privacyPolicyUrl
  */
 function assertPhoneFullMessage(tosUrl, privacyPolicyUrl) {
   var element = goog.dom.getElementByClass('firebaseui-tos', container);
@@ -694,15 +950,14 @@ function assertPhoneFullMessage(tosUrl, privacyPolicyUrl) {
     assertNull(tosLinkElement);
     assertNull(ppLinkElement);
   } else {
-    assertEquals(tosUrl, tosLinkElement.href);
-    assertEquals(privacyPolicyUrl, ppLinkElement.href);
+    assertTosPpLinkClicked_(tosUrl, privacyPolicyUrl);
   }
 }
 
 
 /**
- * @param {?string} tosUrl
- * @param {?string} privacyPolicyUrl
+ * @param {?string|function()|undefined} tosUrl
+ * @param {?string|function()|undefined} privacyPolicyUrl
  */
 function assertPhoneFooter(tosUrl, privacyPolicyUrl) {
   var element = goog.dom.getElementByClass('firebaseui-tos', container);
@@ -754,6 +1009,31 @@ function assertBusyIndicatorHidden() {
 
 function assertCallbackPage() {
   assertPage_(container, 'firebaseui-id-page-callback');
+}
+
+
+/** Asserts that a blank page is displayed. */
+function assertBlankPage() {
+  assertPage_(container, 'firebaseui-id-page-blank');
+}
+
+
+/** Asserts that email link sign-in confirmation is displayed. */
+function assertEmailLinkSignInConfirmationPage() {
+  assertPage_(container, 'firebaseui-id-page-email-link-sign-in-confirmation');
+}
+
+
+/**
+ * Asserts that email link for new device linking page is rendered with expected
+ * provider name.
+ * @param {string} providerName The provider name to check.
+ */
+function assertEmailLinkSignInLinkingDifferentDevicePage(providerName) {
+  assertPage_(
+      container,
+      'firebaseui-id-page-email-link-sign-in-linking-different-device');
+  assertPageContainsText(providerName);
 }
 
 
@@ -809,6 +1089,18 @@ function assertPasswordSignInPage() {
 
 function assertPasswordSignUpPage() {
   assertPage_(container, 'firebaseui-id-page-password-sign-up');
+}
+
+
+/**
+ * Asserts that unsupported provider page is displayed.
+ * @param {string=} opt_email Optional email to check.
+ */
+function assertUnsupportedProviderPage(opt_email) {
+  assertPage_(container, 'firebaseui-id-page-unsupported-provider');
+  if (opt_email) {
+    assertPageContainsText(opt_email);
+  }
 }
 
 
@@ -966,6 +1258,46 @@ function assertPhoneSignInStartPage() {
 /** Asserts that the phone sign in code entry page is rendered. */
 function assertPhoneSignInFinishPage() {
   assertPage_(container, 'firebaseui-id-page-phone-sign-in-finish');
+}
+
+
+/** Asserts that the email link sign in sent page is rendered. */
+function assertEmailLinkSignInSentPage() {
+  assertPage_(container, 'firebaseui-id-page-email-link-sign-in-sent');
+}
+
+
+/**
+ * Asserts that the email link sign in linking page is rendered.
+ * @param {string=} opt_email Optional email to check.
+ * @param {string=} opt_providerName Optional provider name to check.
+ */
+function assertEmailLinkSignInLinkingPage(opt_email, opt_providerName) {
+  assertPage_(container, 'firebaseui-id-page-email-link-sign-in-linking');
+  if (opt_email) {
+    assertPageContainsText(opt_email);
+  }
+  if (opt_providerName) {
+    assertPageContainsText(opt_providerName);
+  }
+}
+
+
+/** Asserts that the email not received page is rendered. */
+function assertEmailNotReceivedPage() {
+  assertPage_(container, 'firebaseui-id-page-email-not-received');
+}
+
+
+/** Asserts that the different device error page is rendered. */
+function assertDifferentDeviceErrorPage() {
+  assertPage_(container, 'firebaseui-id-page-different-device-error');
+}
+
+
+/** Asserts that the anonymous user mismatch page is rendered. */
+function assertAnonymousUserMismatchPage() {
+  assertPage_(container, 'firebaseui-id-page-anonymous-user-mismatch');
 }
 
 
@@ -1169,4 +1501,25 @@ function assertSignInFailure(expectedError) {
       expectedError, signInFailureCallback.getLastCall().getArgument(0));
   // Sign in success should not be called.
   assertUndefined(signInCallbackUser);
+}
+
+
+
+/**
+ * Asserts the last revertLanguageCode call was called on the specified
+ * AuthUI instance. After assertion, the internal state counter is reset.
+ * @param {!firebaseui.auth.AuthUI} app The AuthUI instance to check for
+ *     revertLanguageCode calls.
+ */
+function assertRevertLanguageCode(app) {
+  assertEquals(app, lastRevertLanguageCodeCall);
+  lastRevertLanguageCodeCall = null;
+}
+
+
+/**
+ * Asserts no revertLanguageCode call was called.
+ */
+function assertNoRevertLanguageCode() {
+  assertNull(lastRevertLanguageCodeCall);
 }

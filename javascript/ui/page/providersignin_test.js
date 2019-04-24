@@ -27,9 +27,11 @@ goog.require('firebaseui.auth.ui.page.PageTestHelper');
 goog.require('firebaseui.auth.ui.page.ProviderSignIn');
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
+goog.require('goog.testing.MockClock');
 goog.require('goog.testing.jsunit');
 
 
+var mockClock;
 var root;
 var component;
 var idpsTestHelper =
@@ -38,26 +40,46 @@ var infoBarTestHelper =
     new firebaseui.auth.ui.element.InfoBarTestHelper().registerTests();
 var tosPpTestHelper =
     new firebaseui.auth.ui.element.TosPpTestHelper().registerTests();
+var pageTestHelper =
+    new firebaseui.auth.ui.page.PageTestHelper().registerTests();
 
 
 function setUp() {
+  // Set up clock.
+  mockClock = new goog.testing.MockClock();
+  mockClock.install();
   root = goog.dom.createDom(goog.dom.TagName.DIV);
   document.body.appendChild(root);
   component = new firebaseui.auth.ui.page.ProviderSignIn(
       goog.bind(
           firebaseui.auth.ui.element.IdpsTestHelper.prototype.onClick,
           idpsTestHelper),
-      ['facebook.com', 'password'],
-      'http://localhost/tos',
-      'http://localhost/privacy_policy');
+      [{
+        providerId: 'google.com'
+      },
+      {
+        providerId: 'password'
+      }],
+      goog.bind(
+          firebaseui.auth.ui.element.TosPpTestHelper.prototype.onTosLinkClick,
+          tosPpTestHelper),
+      goog.bind(
+          firebaseui.auth.ui.element.TosPpTestHelper.prototype.onPpLinkClick,
+          tosPpTestHelper));
   component.render(root);
   idpsTestHelper.setComponent(component);
   infoBarTestHelper.setComponent(component);
   tosPpTestHelper.setComponent(component);
+  // Reset previous state of tosPp helper.
+  tosPpTestHelper.resetState();
+  pageTestHelper.setClock(mockClock).setComponent(component);
 }
 
 
 function tearDown() {
+  // Tear down clock.
+  mockClock.tick(Infinity);
+  mockClock.reset();
   component.dispose();
   goog.dom.removeNode(root);
 }
@@ -65,7 +87,6 @@ function tearDown() {
 
 function testProviderSignIn_pageEvents() {
   // Run page event tests.
-  var pageTestHelper = new firebaseui.auth.ui.page.PageTestHelper();
   // Dispose previously created container since test must run before rendering
   // the component in docoument.
   component.dispose();
@@ -74,7 +95,12 @@ function testProviderSignIn_pageEvents() {
       goog.bind(
           firebaseui.auth.ui.element.IdpsTestHelper.prototype.onClick,
           idpsTestHelper),
-      ['facebook.com', 'password']);
+      [{
+        providerId: 'facebook.com'
+      },
+      {
+        providerId: 'password'
+      }]);
   // Run all page helper tests.
   pageTestHelper.runTests(component, root);
 }

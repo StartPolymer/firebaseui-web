@@ -61,8 +61,8 @@ firebaseui.auth.OAuthResponse;
  * @typedef {{
  *   user: (?firebase.User),
  *   credential: (?firebase.auth.AuthCredential),
- *   operationType: (?string),
- *   additionalUserInfo: (?firebase.auth.AdditionalUserInfo)
+ *   operationType: (?string|undefined),
+ *   additionalUserInfo: (?firebase.auth.AdditionalUserInfo|undefined)
  * }}
  */
 firebaseui.auth.AuthResult;
@@ -420,6 +420,9 @@ firebaseui.auth.widget.handler.common.selectFromAccountChooser = function(
  */
 firebaseui.auth.widget.handler.common.setLoggedIn =
     function(app, component, credential, opt_user, opt_alreadySignedIn) {
+  // Revert language code at this point to ensure languageCode changes are
+  // reverted before callbacks are triggered.
+  app.revertLanguageCode();
   if (!!opt_alreadySignedIn) {
     // Already signed in on external auth instance.
     firebaseui.auth.widget.handler.common.setUserLoggedInExternal_(
@@ -540,6 +543,9 @@ firebaseui.auth.widget.handler.common.setLoggedIn =
  */
 firebaseui.auth.widget.handler.common.setLoggedInWithAuthResult =
     function(app, component, authResult, opt_alreadySignedIn) {
+  // Revert language code at this point to ensure languageCode changes are
+  // reverted before callbacks are triggered.
+  app.revertLanguageCode();
   if (!!opt_alreadySignedIn) {
     firebaseui.auth.widget.handler.common
         .setUserLoggedInExternalWithAuthResult_(
@@ -911,7 +917,7 @@ firebaseui.auth.widget.handler.common.getAuthProvider_ = function(
   var additionalScopes =
       app.getConfig().getProviderAdditionalScopes(providerId);
   // Some providers like Twitter do not accept additional scopes.
-  if (provider && provider['addScope']) {
+  if (provider['addScope']) {
     // Add every requested additional scope to the provider.
     for (var i = 0; i < additionalScopes.length; i++) {
       provider['addScope'](additionalScopes[i]);
@@ -919,20 +925,28 @@ firebaseui.auth.widget.handler.common.getAuthProvider_ = function(
   }
   // Get custom parameters for the selected provider.
   var customParameters =
-      app.getConfig().getProviderCustomParameters(providerId);
-  // If Google provider is requested and email is specified, pass OAuth
-  // parameter login_hint with that email.
-  // Only Google supports this parameter.
-  if (providerId == firebase.auth.GoogleAuthProvider.PROVIDER_ID &&
-      // Only pass login_hint when email available.
-      opt_email) {
-    // In case no custom parameters are provided for google.com.
-    customParameters = customParameters || {};
-    // Add the login_hint.
-    customParameters['login_hint'] = opt_email;
+      app.getConfig().getProviderCustomParameters(providerId) || {};
+  // Some providers accept an email address as a login hint. If the email is
+  // set and if the provider supports it, add it to the custom paramaters.
+  if (opt_email) {
+    var loginHintKey;
+    if (providerId == firebase.auth.GoogleAuthProvider.PROVIDER_ID) {
+      // Since the name of the parameter is known for Google, set this
+      // automatically. Google is the only default provider which supports a
+      // login hint.
+      loginHintKey = 'login_hint';
+    } else {
+      // For other providers, check if the name is set in the configuration.
+      var providerConfig = app.getConfig().getConfigForProvider(providerId);
+      loginHintKey = providerConfig && providerConfig.loginHintKey;
+    }
+    // If the hint is set, add the email to the custom parameters.
+    if (loginHintKey) {
+      customParameters[loginHintKey] = opt_email;
+    }
   }
-  // Add custom OAuth parameters if applicable for the current provider.
-  if (customParameters && provider && provider.setCustomParameters) {
+  // Set the custom parameters if applicable for the current provider.
+  if (provider.setCustomParameters) {
     provider.setCustomParameters(customParameters);
   }
   return provider;
@@ -1063,6 +1077,38 @@ firebaseui.auth.widget.handler.common.federatedSignIn = function(
               goog.Promise.resolve(result));
         }, signInResultErrorCallback));
   }
+};
+
+
+/**
+ * @param {!firebaseui.auth.AuthUI} app The current FirebaseUI instance whose
+ *     configuration is used.
+ * @param {!firebaseui.auth.ui.page.Base} component The current UI component.
+ * @package
+ */
+firebaseui.auth.widget.handler.common.handleSignInAnonymously = function(
+    app, component) {
+  app.registerPending(component.executePromiseRequest(
+      /** @type {function (): !goog.Promise} */ (
+          goog.bind(app.startSignInAnonymously, app)),
+      [],
+      function(userCredential) {
+        component.dispose();
+        return firebaseui.auth.widget.handler.common.setLoggedInWithAuthResult(
+            app,
+            component,
+            /** @type {!firebaseui.auth.AuthResult} */(userCredential),
+            true);
+      },
+      function(error) {
+        if (error['name'] && error['name'] == 'cancel') {
+          return;
+        }
+        firebaseui.auth.log.error('ContinueAsGuest: ' + error['code']);
+        var errorMessage =
+            firebaseui.auth.widget.handler.common.getErrorMessage(error);
+        component.showInfoBar(errorMessage);
+      }));
 };
 
 
@@ -1430,9 +1476,9 @@ firebaseui.auth.widget.handler.common.handleSignInFetchSignInMethodsForEmail =
         opt_infoBarMessage,
         opt_displayFullTosPpMessage) {
   // Does the account exist?
-  if (!signInMethods.length) {
-    // Account does not exist, go to password sign up and populate
-    // available fields.
+  if (!signInMethods.length && app.getConfig().isEmailPasswordSignInAllowed()) {
+    // Account does not exist and password sign-in method is enabled. Go to
+    // password sign up and populate available fields.
     firebaseui.auth.widget.handler.handle(
         firebaseui.auth.widget.HandlerName.PASSWORD_SIGN_UP,
         app,
@@ -1441,34 +1487,111 @@ firebaseui.auth.widget.handler.common.handleSignInFetchSignInMethodsForEmail =
         opt_displayName,
         undefined,
         opt_displayFullTosPpMessage);
+  } else if (!signInMethods.length &&
+             app.getConfig().isEmailLinkSignInAllowed()) {
+    // Account does not exist and email link sign-in method is enabled. Send
+    // email link to sign in.
+    firebaseui.auth.widget.handler.handle(
+        firebaseui.auth.widget.HandlerName.SEND_EMAIL_LINK_FOR_SIGN_IN,
+        app,
+        container,
+        email,
+        function() {
+          // Clicking back button goes back to sign in page.
+          firebaseui.auth.widget.handler.handle(
+              firebaseui.auth.widget.HandlerName.SIGN_IN,
+              app,
+              container);
+        });
   } else if (goog.array.contains(signInMethods,
-      firebase.auth.EmailAuthProvider.EMAIL_PASSWORD_SIGN_IN_METHOD) ||
-      goog.array.contains(signInMethods,
-      firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD)) {
-    // Password account.
+      firebase.auth.EmailAuthProvider.EMAIL_PASSWORD_SIGN_IN_METHOD)) {
+    // Existing Password account.
     firebaseui.auth.widget.handler.handle(
         firebaseui.auth.widget.HandlerName.PASSWORD_SIGN_IN,
         app,
         container,
         email,
         opt_displayFullTosPpMessage);
+  } else if ((signInMethods.length == 1) && (signInMethods[0] ===
+      firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD)) {
+    // Existing email link account.
+    firebaseui.auth.widget.handler.handle(
+        firebaseui.auth.widget.HandlerName.SEND_EMAIL_LINK_FOR_SIGN_IN,
+        app,
+        container,
+        email,
+        function() {
+          // Clicking back button goes back to sign in page.
+          firebaseui.auth.widget.handler.handle(
+              firebaseui.auth.widget.HandlerName.SIGN_IN,
+              app,
+              container);
+        });
   } else {
     // Federated Account.
     // The account exists, and is a federated identity account.
     // We store the pending email in case the user tries to use an account with
     // a different email.
-    var pendingEmailCredential =
-        new firebaseui.auth.PendingEmailCredential(email);
-    firebaseui.auth.storage.setPendingEmailCredential(
-        pendingEmailCredential, app.getAppId());
+    var federatedSignInMethod =
+        firebaseui.auth.idp.getFirstFederatedSignInMethod(
+            signInMethods, app.getConfig().getProviders());
+    if (federatedSignInMethod) {
+      var pendingEmailCredential =
+          new firebaseui.auth.PendingEmailCredential(email);
+      firebaseui.auth.storage.setPendingEmailCredential(
+          pendingEmailCredential, app.getAppId());
+      firebaseui.auth.widget.handler.handle(
+          firebaseui.auth.widget.HandlerName.FEDERATED_SIGN_IN,
+          app,
+          container,
+          email,
+          federatedSignInMethod,
+          opt_infoBarMessage);
+    } else {
+      firebaseui.auth.widget.handler.handle(
+          firebaseui.auth.widget.HandlerName.UNSUPPORTED_PROVIDER,
+          app,
+          container,
+          email);
+    }
+  }
+};
+
+
+/**
+ * Handles sending email link for either sign in or link. If pending
+ * credential is passed, send email for link. Otherwise, send email for sign in.
+ *
+ * @param {!firebaseui.auth.AuthUI} app The current FirebaseUI instance whose
+ *     configuration is used.
+ * @param {!firebaseui.auth.ui.page.Base} component The current UI component.
+ * @param {string} email The user's email.
+ * @param {function()} onCancelClick Callback to invoke when the back button is
+ *     clicked in email link sign in sent page.
+ * @param {function(*)} onError Callback to invoke when error occurs while
+ *     sending the sign in email link.
+ * @param {?firebaseui.auth.PendingEmailCredential=} opt_pendingCredential The
+ *     pending credential to link to a successfully signed in user.
+ */
+firebaseui.auth.widget.handler.common.sendEmailLinkForSignIn = function(
+    app, component, email, onCancelClick, onError, opt_pendingCredential) {
+  var container = component.getContainer();
+  var onSuccess = function() {
+    component.dispose();
     firebaseui.auth.widget.handler.handle(
-        firebaseui.auth.widget.HandlerName.FEDERATED_SIGN_IN,
+        firebaseui.auth.widget.HandlerName.EMAIL_LINK_SIGN_IN_SENT,
         app,
         container,
         email,
-        signInMethods[0],
-        opt_infoBarMessage);
-  }
+        onCancelClick,
+        opt_pendingCredential);
+  };
+  app.registerPending(component.executePromiseRequest(
+      /** @type {function (): !goog.Promise} */ (
+          goog.bind(app.sendSignInLinkToEmail, app)),
+      [email, opt_pendingCredential],
+      onSuccess,
+      onError));
 };
 
 

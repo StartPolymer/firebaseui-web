@@ -32,6 +32,8 @@ goog.require('firebaseui.auth.ui.page.ProviderSignIn');
 goog.require('firebaseui.auth.widget.Config');
 goog.require('firebaseui.auth.widget.handler');
 goog.require('firebaseui.auth.widget.handler.common');
+/** @suppress {extraRequire} */
+goog.require('firebaseui.auth.widget.handler.handleEmailLinkSignInSent');
 goog.require('firebaseui.auth.widget.handler.handleFederatedLinking');
 /** @suppress {extraRequire} Required for accountchooser.com page navigation to
  *      work. */
@@ -40,6 +42,8 @@ goog.require('firebaseui.auth.widget.handler.handlePasswordLinking');
 goog.require('firebaseui.auth.widget.handler.handlePasswordSignIn');
 goog.require('firebaseui.auth.widget.handler.handlePasswordSignUp');
 goog.require('firebaseui.auth.widget.handler.handleProviderSignIn');
+/** @suppress {extraRequire} */
+goog.require('firebaseui.auth.widget.handler.handleSendEmailLinkForSignIn');
 goog.require('firebaseui.auth.widget.handler.handleSignIn');
 goog.require('firebaseui.auth.widget.handler.testHelper');
 goog.require('goog.Promise');
@@ -159,6 +163,72 @@ function testSelectFromAccountChooser_registeredPasswordAccount() {
 }
 
 
+function testSelectFromAccountChooser_registeredEmailLinkAccount() {
+  // Test when selected account is a registered email link account in
+  // provider-first mode.
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var expectedActionCodeSettings = buildActionCodeSettings();
+  asyncTestCase.waitForSignals(1);
+  testAc.setSelectedAccount(passwordAccount);
+  firebaseui.auth.widget.handler.common.selectFromAccountChooser(getApp,
+      container);
+  testAuth.assertFetchSignInMethodsForEmail(
+      [passwordAccount.getEmail()],
+      ['emailLink']);
+  return testAuth.process().then(function() {
+    // Callback page should be rendered.
+    assertCallbackPage();
+    testAuth.assertSendSignInLinkToEmail(
+        [passwordAccount.getEmail(), expectedActionCodeSettings]);
+    assertTrue(firebaseui.auth.storage.hasRememberAccount(app.getAppId()));
+    assertFalse(firebaseui.auth.storage.isRememberAccount(app.getAppId()));
+    return testAuth.process();
+  }).then(function () {
+    assertEmailLinkSignInSentPage();
+    // Email for email link sign in should be stored.
+    assertEquals(
+        passwordAccount.getEmail(),
+        firebaseui.auth.storage.getEmailForSignIn('SESSIONID', app.getAppId()));
+    mockClock.tick(3600000);
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    asyncTestCase.signal();
+  });
+}
+
+
+function testSelectFromAccountChooser_registeredEmailLinkAccount_error() {
+  // Test when selected account is a registered email link account in
+  // provider-first mode. If error is thrown while sending the email, goes back
+  // to the sign in page and show error message.
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var expectedActionCodeSettings = buildActionCodeSettings();
+  asyncTestCase.waitForSignals(1);
+  testAc.setSelectedAccount(passwordAccount);
+  firebaseui.auth.widget.handler.common.selectFromAccountChooser(getApp,
+      container);
+  testAuth.assertFetchSignInMethodsForEmail(
+      [passwordAccount.getEmail()],
+      ['emailLink']);
+  testAuth.process().then(function() {
+    // Callback page should be rendered.
+    assertCallbackPage();
+    testAuth.assertSendSignInLinkToEmail(
+        [passwordAccount.getEmail(), expectedActionCodeSettings], null,
+        internalError);
+    assertTrue(firebaseui.auth.storage.hasRememberAccount(app.getAppId()));
+    assertFalse(firebaseui.auth.storage.isRememberAccount(app.getAppId()));
+    return testAuth.process();
+  }).then(function() {
+    // Verify that error message is displayed on the sign in page.
+    assertSignInPage();
+    assertInfoBarMessage(
+        firebaseui.auth.widget.handler.common.getErrorMessage(internalError));
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    asyncTestCase.signal();
+  });
+}
+
+
 function testSelectFromAccountChooser_unregisteredAccount() {
   // Test when selected account is an unregistered federated account in
   // provider-first mode.
@@ -239,8 +309,7 @@ function testSelectFromAccountChooser_addAccount() {
       container);
   // The sign-in page should show.
   assertSignInPage();
-  assertTosPpFooter(
-      'http://localhost/tos', 'http://localhost/privacy_policy');
+  assertTosPpFooter(tosCallback, 'http://localhost/privacy_policy');
   assertFalse(firebaseui.auth.storage.hasRememberAccount(app.getAppId()));
 }
 
@@ -256,8 +325,7 @@ function testSelectFromAccountChooser_addAccount_passwordOnly() {
       container);
   // The sign-in page should show.
   assertSignInPage();
-  assertTosPpFullMessage(
-      'http://localhost/tos', 'http://localhost/privacy_policy');
+  assertTosPpFullMessage(tosCallback, 'http://localhost/privacy_policy');
   assertFalse(firebaseui.auth.storage.hasRememberAccount(app.getAppId()));
 }
 
@@ -283,7 +351,10 @@ function testSetLoggedIn() {
   var cred = firebase.auth.EmailAuthProvider.credential(
       passwordUser['email'], 'password');
   testAuth.setUser(passwordUser);
+  // Confirm revertLanguageCode called on setLoggedIn.
+  assertNoRevertLanguageCode();
   firebaseui.auth.widget.handler.common.setLoggedIn(app, testComponent, cred);
+  assertRevertLanguageCode(app);
   // Sign out from internal instance and then sign in with passed credential to
   // external instance.
   return testAuth.process().then(function() {
@@ -1204,8 +1275,11 @@ function testSetLoggedInWithAuthResult() {
     'operationType': 'signIn',
     'additionalUserInfo':  {'providerId': 'password', 'isNewUser': true}
   };
+  // Confirm revertLanguageCode called on setLoggedInWithAuthResult.
+  assertNoRevertLanguageCode();
   firebaseui.auth.widget.handler.common.setLoggedInWithAuthResult(
       app, testComponent, internalAuthResult);
+  assertRevertLanguageCode(app);
   // Sign out from internal instance and then sign in with passed credential to
   // external instance.
   return testAuth.process().then(function() {
@@ -2454,7 +2528,7 @@ function testSelectFromAccountChooser_acCallbacks_addAccount() {
 }
 
 
-function testHandleSignInFetchSignInMethodsForEmail_unregistered() {
+function testHandleSignInFetchSignInMethodsForEmail_unregistered_password() {
   var signInMethods = [];
   var email = 'user@example.com';
   var displayName = 'John Doe';
@@ -2462,13 +2536,36 @@ function testHandleSignInFetchSignInMethodsForEmail_unregistered() {
       app, container, signInMethods, email, displayName);
   // Password sign up page should show with email and display name populated.
   assertPasswordSignUpPage();
-  assertTosPpFooter('http://localhost/tos', 'http://localhost/privacy_policy');
+  assertTosPpFooter(tosCallback, 'http://localhost/privacy_policy');
   assertEquals(
         email,
         goog.dom.forms.getValue(getEmailElement()));
     assertEquals(
         displayName,
         goog.dom.forms.getValue(getNameElement()));
+}
+
+
+function testHandleSignInFetchSignInMethodsForEmail_unregistered_emailLink() {
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var expectedActionCodeSettings = buildActionCodeSettings();
+  var signInMethods = [];
+  var email = 'user@example.com';
+  asyncTestCase.waitForSignals(1);
+  firebaseui.auth.widget.handler.common.handleSignInFetchSignInMethodsForEmail(
+      app, container, signInMethods, email);
+  assertCallbackPage();
+  testAuth.assertSendSignInLinkToEmail([email, expectedActionCodeSettings]);
+  testAuth.process().then(function() {
+    assertEmailLinkSignInSentPage();
+    // Email for email link sign in should be stored.
+    assertEquals(
+        email,
+        firebaseui.auth.storage.getEmailForSignIn('SESSIONID', app.getAppId()));
+    mockClock.tick(3600000);
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    asyncTestCase.signal();
+  });
 }
 
 
@@ -2480,8 +2577,7 @@ function testHandleSignInFetchSignInMethodsForEmail_unregistered_fullMsg() {
       app, container, signInMethods, email, displayName, undefined, true);
   // Password sign up page should show with email and display name populated.
   assertPasswordSignUpPage();
-  assertTosPpFullMessage(
-      'http://localhost/tos', 'http://localhost/privacy_policy');
+  assertTosPpFullMessage(tosCallback, 'http://localhost/privacy_policy');
   assertEquals(
         email,
         goog.dom.forms.getValue(getEmailElement()));
@@ -2498,7 +2594,7 @@ function testHandleSignInFetchSignInMethodsForEmail_registeredPasswordAcct() {
       app, container, signInMethods, email);
   // Password sign-in page should show.
   assertPasswordSignInPage();
-  assertTosPpFooter('http://localhost/tos', 'http://localhost/privacy_policy');
+  assertTosPpFooter(tosCallback, 'http://localhost/privacy_policy');
   assertEquals(email, goog.dom.forms.getValue(getEmailElement()));
   assertEquals(0, getIdpButtons().length);
 }
@@ -2511,27 +2607,61 @@ function testHandleSignInFetchSignInMethodsForEmail_registeredPwdAcctFullMsg() {
       app, container, signInMethods, email, undefined, undefined, true);
   // Password sign-in page should show.
   assertPasswordSignInPage();
-  assertTosPpFullMessage(
-      'http://localhost/tos', 'http://localhost/privacy_policy');
+  assertTosPpFullMessage(tosCallback, 'http://localhost/privacy_policy');
   assertEquals(email, goog.dom.forms.getValue(getEmailElement()));
   assertEquals(0, getIdpButtons().length);
 }
 
 
 function testHandleSignInFetchSignInMethodsForEmail_registeredEmailLinkAcct() {
-  var signInMethods = ['google.com', 'facebook.com', 'emailLink'];
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var signInMethods = ['emailLink'];
+  var expectedActionCodeSettings = buildActionCodeSettings();
   var email = 'user@example.com';
+  asyncTestCase.waitForSignals(1);
   firebaseui.auth.widget.handler.common.handleSignInFetchSignInMethodsForEmail(
       app, container, signInMethods, email);
-  // Password sign-in page should show.
-  assertPasswordSignInPage();
-  assertEquals(email, goog.dom.forms.getValue(getEmailElement()));
-  assertEquals(0, getIdpButtons().length);
+  assertCallbackPage();
+  testAuth.assertSendSignInLinkToEmail([email, expectedActionCodeSettings]);
+  testAuth.process().then(function() {
+    assertEmailLinkSignInSentPage();
+    // Email for email link sign in should be stored.
+    assertEquals(
+        email,
+        firebaseui.auth.storage.getEmailForSignIn('SESSIONID', app.getAppId()));
+    mockClock.tick(3600000);
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    asyncTestCase.signal();
+  });
+}
+
+
+function testHandleSignInFetchSignInMethodsForEmail_emailLinkAcct_error() {
+  // Test the case that error is thrown while sending email link.
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var signInMethods = ['emailLink'];
+  var expectedActionCodeSettings = buildActionCodeSettings();
+  var email = 'user@example.com';
+  asyncTestCase.waitForSignals(1);
+  firebaseui.auth.widget.handler.common.handleSignInFetchSignInMethodsForEmail(
+      app, container, signInMethods, email);
+  assertCallbackPage();
+  testAuth.assertSendSignInLinkToEmail(
+      [email, expectedActionCodeSettings], null, internalError);
+  testAuth.process().then(function() {
+    // Verify that error message is displayed on the sign in page.
+    assertSignInPage();
+    assertInfoBarMessage(
+        firebaseui.auth.widget.handler.common.getErrorMessage(internalError));
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    asyncTestCase.signal();
+  });
 }
 
 
 function testHandleSignInFetchSignInMethodsForEmail_registeredFederatedAcct() {
-  var signInMethods = ['google.com', 'facebook.com'];
+  // Even email link sign in is available, should be still using google.
+  var signInMethods = ['emailLink', 'google.com', 'facebook.com'];
   var email = 'user@example.com';
   firebaseui.auth.widget.handler.common.handleSignInFetchSignInMethodsForEmail(
       app, container, signInMethods, email);
@@ -2546,6 +2676,22 @@ function testHandleSignInFetchSignInMethodsForEmail_registeredFederatedAcct() {
           .toPlainObject());
   // Federated Linking page should show.
   assertFederatedLinkingPage(email);
+}
+
+
+function testHandleSignInFetchSignInMethodsForEmail_disabledFederatedAcct() {
+  // Even if the account is linked with a SAML provider, as long as it's not
+  // enabled in config, the unsupported provider page will be displayed to the
+  // user.
+  var signInMethods = ['saml.disabledProvider'];
+  var email = 'user@example.com';
+  firebaseui.auth.widget.handler.common.handleSignInFetchSignInMethodsForEmail(
+      app, container, signInMethods, email);
+  // It should not store pending email.
+  assertFalse(firebaseui.auth.storage.hasPendingEmailCredential(
+        app.getAppId()));
+  // Unsupported provider page should show.
+  assertUnsupportedProviderPage(email);
 }
 
 
@@ -2802,7 +2948,7 @@ function testFederatedSignIn_error_redirectMode() {
 
 function testFederatedSignIn_success_cordova() {
   simulateCordovaEnvironment();
-  var cred  = firebaseui.auth.idp.getAuthCredential({
+  var cred  = createMockCredential({
     'providerId': 'google.com',
     'accessToken': 'ACCESS_TOKEN'
   });
@@ -2995,7 +3141,7 @@ function testFederatedSignIn_anonymousUpgrade_success_cordova() {
   simulateCordovaEnvironment();
   app.updateConfig('autoUpgradeAnonymousUsers', true);
   externalAuth.setUser(anonymousUser);
-  var cred  = firebaseui.auth.idp.getAuthCredential({
+  var cred  = createMockCredential({
     'providerId': 'google.com',
     'accessToken': 'ACCESS_TOKEN'
   });
@@ -3101,7 +3247,7 @@ function testFederatedSignIn_anonymousUpgrade_emailInUse_error_cordova() {
   simulateCordovaEnvironment();
   app.updateConfig('autoUpgradeAnonymousUsers', true);
   externalAuth.setUser(anonymousUser);
-  var cred  = firebaseui.auth.idp.getAuthCredential({
+  var cred  = createMockCredential({
     'providerId': 'google.com',
     'accessToken': 'ACCESS_TOKEN'
   });
@@ -3147,6 +3293,81 @@ function testFederatedSignIn_anonymousUpgrade_emailInUse_error_cordova() {
         firebaseui.auth.storage.getPendingEmailCredential(app.getAppId()));
     // Federated linking flow should be triggered.
     assertFederatedLinkingPage(federatedAccount.getEmail());
+    asyncTestCase.signal();
+  });
+}
+
+
+function testHandleSignInAnonymously_success() {
+  var component = new firebaseui.auth.ui.page.ProviderSignIn(
+      goog.nullFunction(), []);
+  component.render(container);
+  asyncTestCase.waitForSignals(1);
+  firebaseui.auth.widget.handler.common.handleSignInAnonymously(
+      app, component);
+  assertProviderSignInPage();
+  externalAuth.assertSignInAnonymously(
+      [],
+      {
+        'user': anonymousUser,
+        'credential': null
+      });
+  externalAuth.process().then(function() {
+    // User should be redirected to success URL.
+    testUtil.assertGoTo('http://localhost/home');
+    asyncTestCase.signal();
+  });
+}
+
+
+function testHandleSignInAnonymously_signInSuccessCallback() {
+  app.updateConfig('callbacks', {
+    'signInSuccessWithAuthResult': signInSuccessWithAuthResultCallback(true)
+  });
+  var component = new firebaseui.auth.ui.page.ProviderSignIn(
+      goog.nullFunction(), []);
+  component.render(container);
+  asyncTestCase.waitForSignals(1);
+  firebaseui.auth.widget.handler.common.handleSignInAnonymously(
+      app, component);
+  assertProviderSignInPage();
+  var expectedAuthResult = {
+    'user': anonymousUser,
+    'credential': null,
+    'operationType': 'signIn',
+    'additionalUserInfo':  {'providerId': null, 'isNewUser': true}
+  };
+  externalAuth.assertSignInAnonymously(
+      [],
+      expectedAuthResult);
+  externalAuth.process().then(function() {
+    // SignInSuccessWithAuthResultCallback is called.
+    assertSignInSuccessWithAuthResultCallbackInvoked(
+        expectedAuthResult,
+        undefined);
+    // User should be redirected to success URL.
+    testUtil.assertGoTo('http://localhost/home');
+    asyncTestCase.signal();
+  });
+}
+
+
+function testHandleSignInAnonymously_error() {
+  var component = new firebaseui.auth.ui.page.ProviderSignIn(
+      goog.nullFunction(), []);
+  component.render(container);
+  asyncTestCase.waitForSignals(1);
+  firebaseui.auth.widget.handler.common.handleSignInAnonymously(
+      app, component);
+  assertProviderSignInPage();
+  externalAuth.assertSignInAnonymously(
+      [],
+      null,
+      internalError);
+  externalAuth.process().then(function() {
+    assertProviderSignInPage();
+    assertInfoBarMessage(
+        firebaseui.auth.widget.handler.common.getErrorMessage(internalError));
     asyncTestCase.signal();
   });
 }
@@ -3218,7 +3439,7 @@ function testHandleGoogleYoloCredential_handledSuccessfully_withoutScopes() {
       });
   var expectedCredential = firebase.auth.GoogleAuthProvider.credential(
       googleYoloIdTokenCredential.idToken);
-  var cred  = firebaseui.auth.idp.getAuthCredential({
+  var cred  = createMockCredential({
     'providerId': 'google.com',
     'idToken': googleYoloIdTokenCredential.idToken
   });
@@ -3653,4 +3874,176 @@ function testHandleGoogleYoloCredential_upgradeAnonymous_withScopes() {
   // Confirm linkWithRedirect called on the external Auth instance user.
   externalAuth.currentUser.assertLinkWithRedirect([expectedProvider]);
   testAuth.process();
+}
+
+
+function testSendEmailLinkForSignIn() {
+  // Test sign in email link is sent with expected action code settings.
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var expectedActionCodeSettings = buildActionCodeSettings();
+  asyncTestCase.waitForSignals(1);
+  var component = new firebaseui.auth.ui.page.Callback();
+  component.render(container);
+  var onCancelClick = goog.testing.recordFunction();
+  firebaseui.auth.widget.handler.common.sendEmailLinkForSignIn(
+      app, component, 'user@example.com', onCancelClick, fail);
+  testAuth.assertSendSignInLinkToEmail(
+      ['user@example.com', expectedActionCodeSettings]);
+  testAuth.process().then(function() {
+    assertEmailLinkSignInSentPage();
+    // Email for email link sign in should be stored.
+    assertEquals(
+        'user@example.com',
+        firebaseui.auth.storage.getEmailForSignIn('SESSIONID', app.getAppId()));
+    mockClock.tick(3600000);
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    asyncTestCase.signal();
+  });
+}
+
+
+function testSendEmailLinkForSignIn_linking() {
+  // Test pending credential is passed for linking flows.
+  var credential = createMockCredential({
+    'accessToken': 'facebookAccessToken',
+    'providerId': 'facebook.com'
+  });
+  var pendingEmailCred = new firebaseui.auth.PendingEmailCredential(
+     'user@example.com', credential);
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var expectedActionCodeSettings = buildActionCodeSettings(
+      false, pendingEmailCred.getCredential().providerId);
+  asyncTestCase.waitForSignals(1);
+  var component = new firebaseui.auth.ui.page.Callback();
+  component.render(container);
+  var onCancelClick = goog.testing.recordFunction();
+  firebaseui.auth.widget.handler.common.sendEmailLinkForSignIn(
+      app, component, 'user@example.com', onCancelClick, fail,
+      pendingEmailCred);
+  testAuth.assertSendSignInLinkToEmail(
+      ['user@example.com', expectedActionCodeSettings]);
+  testAuth.process().then(function() {
+    assertEmailLinkSignInSentPage();
+    // Email for email link sign in and pending credential to link to should
+    // be stored.
+    assertEquals(
+        'user@example.com',
+        firebaseui.auth.storage.getEmailForSignIn('SESSIONID', app.getAppId()));
+    assertObjectEquals(
+        pendingEmailCred,
+        firebaseui.auth.storage.getEncryptedPendingCredential(
+            'SESSIONID', app.getAppId()));
+    mockClock.tick(3600000);
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    assertFalse(
+        firebaseui.auth.storage.hasEncryptedPendingCredential(app.getAppId()));
+    asyncTestCase.signal();
+  });
+}
+
+
+function testSendEmailLinkForSignIn_anonymousUpgrade() {
+  // Test sign in email link is sent for anonymous upgrade.
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  app.updateConfig('autoUpgradeAnonymousUsers', true);
+  // Simulate anonymous current user on external Auth instance.
+  externalAuth.setUser(anonymousUser);
+  // Anonymous user's uid should be set on the email link.
+  var expectedActionCodeSettings = buildActionCodeSettings(
+      null, null, anonymousUser['uid']);
+  asyncTestCase.waitForSignals(1);
+  var component = new firebaseui.auth.ui.page.Callback();
+  component.render(container);
+  var onCancelClick = goog.testing.recordFunction();
+  firebaseui.auth.widget.handler.common.sendEmailLinkForSignIn(
+      app, component, 'user@example.com', onCancelClick, fail);
+  // Trigger onAuthStateChanged listener.
+  externalAuth.runAuthChangeHandler();
+  externalAuth.process().then(function() {
+    testAuth.assertSendSignInLinkToEmail(
+        ['user@example.com', expectedActionCodeSettings]);
+    return testAuth.process();
+  }).then(function() {
+    assertEmailLinkSignInSentPage();
+    // Email for email link sign in should be stored.
+    assertEquals(
+        'user@example.com',
+        firebaseui.auth.storage.getEmailForSignIn('SESSIONID', app.getAppId()));
+    mockClock.tick(3600000);
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    asyncTestCase.signal();
+  });
+}
+
+
+function testSendEmailLinkForSignIn_anonymousUpgrade_pendingCred() {
+  // Test sign in email link is sent with pending credential for anonymous
+  // upgrade.
+  var credential = createMockCredential({
+    'accessToken': 'facebookAccessToken',
+    'providerId': 'facebook.com'
+  });
+  var pendingEmailCred = new firebaseui.auth.PendingEmailCredential(
+     'user@example.com', credential);
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  app.updateConfig('autoUpgradeAnonymousUsers', true);
+  // Simulate anonymous current user on external Auth instance.
+  externalAuth.setUser(anonymousUser);
+  // Anonymous user's uid should be set on the email link. Pending credential
+  // should also be passed.
+  var expectedActionCodeSettings = buildActionCodeSettings(
+      false, pendingEmailCred.getCredential().providerId, anonymousUser['uid']);
+  asyncTestCase.waitForSignals(1);
+  var component = new firebaseui.auth.ui.page.Callback();
+  component.render(container);
+  var onCancelClick = goog.testing.recordFunction();
+  firebaseui.auth.widget.handler.common.sendEmailLinkForSignIn(
+      app, component, 'user@example.com', onCancelClick, fail,
+      pendingEmailCred);
+  // Trigger onAuthStateChanged listener.
+  externalAuth.runAuthChangeHandler();
+  externalAuth.process().then(function() {
+    testAuth.assertSendSignInLinkToEmail(
+        ['user@example.com', expectedActionCodeSettings]);
+    return testAuth.process();
+  }).then(function() {
+    assertEmailLinkSignInSentPage();
+    // Email for email link sign in and pending credential to link to should
+    // be stored.
+    assertEquals(
+        'user@example.com',
+        firebaseui.auth.storage.getEmailForSignIn('SESSIONID', app.getAppId()));
+    assertObjectEquals(
+        pendingEmailCred,
+        firebaseui.auth.storage.getEncryptedPendingCredential(
+            'SESSIONID', app.getAppId()));
+    mockClock.tick(3600000);
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    assertFalse(
+        firebaseui.auth.storage.hasEncryptedPendingCredential(app.getAppId()));
+    asyncTestCase.signal();
+  });
+}
+
+
+function testSendEmailLinkForSignIn_error() {
+  // Test error is thrown for sendSignInLinkToEmail.
+  app.updateConfig('signInOptions', emailLinkSignInOptions);
+  var expectedActionCodeSettings = buildActionCodeSettings();
+  asyncTestCase.waitForSignals(1);
+  var component = new firebaseui.auth.ui.page.Callback();
+  component.render(container);
+  var onError = goog.testing.recordFunction();
+  firebaseui.auth.widget.handler.common.sendEmailLinkForSignIn(
+      app, component, 'user@example.com', fail, onError);
+  testAuth.assertSendSignInLinkToEmail(
+      ['user@example.com', expectedActionCodeSettings], null, internalError);
+  testAuth.process().then(function() {
+    // Email for email link sign in should be removed from storage for error
+    // cases.
+    assertFalse(firebaseui.auth.storage.hasEmailForSignIn(app.getAppId()));
+    assertEquals(1, onError.getCallCount());
+    assertEquals(internalError, onError.getLastCall().getArgument(0));
+    asyncTestCase.signal();
+  });
 }

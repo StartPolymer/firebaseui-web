@@ -116,18 +116,20 @@
  * Renders an identity provider button.
  */
 {template .idpButton}
-  {@param providerId: string} /** The IdP provider ID. */
+  {@param? providerConfig: [providerId:string|null, providerName:string|null,
+      buttonColor:string|null, iconUrl: string|null]} /** The IdP provider config. */
   <button
       class="firebaseui-idp-button mdl-button mdl-js-button mdl-button--raised{sp}
              {call .idpClass_ data="all" /} firebaseui-id-idp-button"
-      data-provider-id="{$providerId}">
+      data-provider-id="{$providerConfig.providerId}"
+      style="background-color:{$providerConfig.buttonColor}">
     <span class="firebaseui-idp-icon-wrapper">
       <img
           class="firebaseui-idp-icon"
           alt=""
           src="{call .idpLogo_ data="all" /}">
     </span>
-    {if $providerId == 'password'}
+    {if $providerConfig.providerId == 'password'}
       <span class="firebaseui-idp-text firebaseui-idp-text-long">
         {msg desc="Label for a button to sign in with an email account that requires a password.
             The long version"}
@@ -140,7 +142,7 @@
           Email
         {/msg}
       </span>
-    {elseif $providerId == 'phone'}
+    {elseif $providerConfig.providerId == 'phone'}
       <span class="firebaseui-idp-text firebaseui-idp-text-long">
         {msg desc="Label for a button to sign in with phone number.
             The long version"}
@@ -151,6 +153,19 @@
         {msg desc="Label for a button to sign in with phone number.
             The short version"}
           Phone
+        {/msg}
+      </span>
+    {elseif $providerConfig.providerId == 'anonymous'}
+      <span class="firebaseui-idp-text firebaseui-idp-text-long">
+        {msg desc="Label for a button to continue as a guest user.
+            The long version"}
+          Continue as guest
+        {/msg}
+      </span>
+      <span class="firebaseui-idp-text firebaseui-idp-text-short">
+        {msg desc="Label for a button to continue as a guest user.
+            The short version"}
+          Guest
         {/msg}
       </span>
     {else}
@@ -183,6 +198,31 @@
       {/msg}
     {/if}
   </button>
+{/template}
+
+
+/**
+ * Renders a Trouble getting email button.
+ */
+{template .troubleGettingEmailButton}
+  <a class="firebaseui-link firebaseui-id-trouble-getting-email-link"
+      href="javascript:void(0)">
+    {msg desc="The label of the button that will redirect to the screen with instructions for
+        troubleshooting issues related to not receiving an email message."}
+      Trouble getting email?
+    {/msg}
+  </a>
+{/template}
+
+
+/**
+ * Renders a resend email link button.
+ */
+{template .resendEmailLinkButton}
+  <a class="firebaseui-link firebaseui-id-resend-email-link"
+      href="javascript:void(0)">
+    {msg desc="Label of the resend email link button"}Resend{/msg}
+  </a>
 {/template}
 
 
@@ -326,9 +366,14 @@
  * Renders the cancel button.
  */
 {template .cancelButton}
+  {@param? label: string} /** Label of the button, defaulting to "Cancel" if not specified. */
   <button class="firebaseui-id-secondary-link firebaseui-button mdl-button mdl-js-button{sp}
                  mdl-button--primary">
-    {msg desc="Link to cancel the current flow."}Cancel{/msg}
+    {if $label}
+      {$label}
+    {else}
+      {msg desc="Link to cancel the current flow."}Cancel{/msg}
+    {/if}
   </button>
 {/template}
 
@@ -351,15 +396,15 @@
  * Renders the links of Terms of Service and Privacy Policy.
  */
 {template .tosPpLink}
-  {if $ij.tosUrl and $ij.privacyPolicyUrl}
+  {if $ij.tosCallback and $ij.privacyPolicyCallback}
     <ul class="firebaseui-tos-list firebaseui-tos">
       <li class="firebaseui-inline-list-item">
-        <a href="{$ij.tosUrl}" class="firebaseui-link firebaseui-tos-link" target="_blank">
+        <a href="javascript:void(0)" class="firebaseui-link firebaseui-tos-link" target="_blank">
           {msg desc="Label for the terms of service"}Terms of Service{/msg}
         </a>
       </li>
       <li class="firebaseui-inline-list-item">
-        <a href="{$ij.privacyPolicyUrl}" class="firebaseui-link firebaseui-pp-link" target="_blank">
+        <a href="javascript:void(0)" class="firebaseui-link firebaseui-pp-link" target="_blank">
           {msg desc="Label for the privacy policy"}Privacy Policy{/msg}
         </a>
       </li>
@@ -374,15 +419,15 @@
  */
 {template .phoneTosPp}
   <p class="firebaseui-tos firebaseui-phone-tos">
-    {if $ij.tosUrl and $ij.privacyPolicyUrl}
+    {if $ij.tosCallback and $ij.privacyPolicyCallback}
       {msg desc="The terms of service and privacy policy for a phone authentication flow. Note that
           'Verify' must match the the label of the 'Verify' button that completes the
           phone number verification flow."}
         By tapping Verify, you are indicating that you accept our{sp}
-        <a href="{$ij.tosUrl}" class="firebaseui-link firebaseui-tos-link" target="_blank">
+        <a href="javascript:void(0)" class="firebaseui-link firebaseui-tos-link" target="_blank">
           Terms of Service
         </a> and{sp}
-        <a href="{$ij.privacyPolicyUrl}" class="firebaseui-link firebaseui-pp-link" target="_blank">
+        <a href="javascript:void(0)" class="firebaseui-link firebaseui-pp-link" target="_blank">
           Privacy Policy
         </a>
         . An SMS may be sent. Message &amp; data rates may apply.
@@ -402,14 +447,14 @@
  * Renders full Terms of Service and Privacy Policy agreement for the first page.
  */
 {template .fullMessageTosPp}
-  {if $ij.tosUrl and $ij.privacyPolicyUrl}
+  {if $ij.tosCallback and $ij.privacyPolicyCallback}
     <p class="firebaseui-tos firebaseui-tospp-full-message">
       {msg desc="The terms of service and privacy policy for the first page."}
         By continuing, you are indicating that you accept our{sp}
-        <a href="{$ij.tosUrl}" class="firebaseui-link firebaseui-tos-link" target="_blank">
+        <a href="javascript:void(0)" class="firebaseui-link firebaseui-tos-link" target="_blank">
           Terms of Service
         </a> and{sp}
-        <a href="{$ij.privacyPolicyUrl}" class="firebaseui-link firebaseui-pp-link" target="_blank">
+        <a href="javascript:void(0)" class="firebaseui-link firebaseui-pp-link" target="_blank">
           Privacy Policy
         </a>.
       {/msg}
@@ -505,8 +550,14 @@
  * Renders a busy indicator to display while server operations are ongoing.
  */
 {template .busyIndicator}
-  <div class="mdl-progress mdl-js-progress mdl-progress__indeterminate{sp}
-      firebaseui-busy-indicator firebaseui-id-busy-indicator"></div>
+  {@param? useSpinner: bool}
+  {if $useSpinner}
+    <div class="mdl-spinner mdl-spinner--single-color mdl-js-spinner is-active{sp}
+        firebaseui-busy-indicator firebaseui-id-busy-indicator"></div>
+  {else}
+    <div class="mdl-progress mdl-js-progress mdl-progress__indeterminate{sp}
+        firebaseui-busy-indicator firebaseui-id-busy-indicator"></div>
+  {/if}
 {/template}
 
 
@@ -528,19 +579,26 @@
  * The list should match the supported provider IDs in Firebase Auth.
  */
 {template .idpName kind="text"}
-  {@param? providerId: string} /** The provider ID of the IdP. */
-  {switch $providerId}
-    {case 'google.com'}
-      {msg desc="Display name of the identity provider for Google sign-in."}Google{/msg}
-    {case 'github.com'}
-      {msg desc="Display name of the identity provider for Github sign-in."}Github{/msg}
-    {case 'facebook.com'}
-      {msg desc="Display name of the identity provider for Facebook sign-in."}Facebook{/msg}
-    {case 'twitter.com'}
-      {msg desc="Display name of the identity provider for Twitter sign-in."}Twitter{/msg}
-    {default}
-      {msg desc="Display name of the identity provider for password sign-in."}Password{/msg}
-  {/switch}
+  {@param? providerConfig: [providerId:string|null, providerName:string|null,
+      buttonColor:string|null, iconUrl: string|null]} /** The IdP provider config. */
+  {if $providerConfig.providerName}
+    {msg desc="Display name of the identity provider."}{$providerConfig.providerName}{/msg}
+  {else}
+    {switch $providerConfig.providerId}
+      {case 'google.com'}
+        {msg desc="Display name of the identity provider for Google sign-in."}Google{/msg}
+      {case 'github.com'}
+        {msg desc="Display name of the identity provider for GitHub sign-in."}GitHub{/msg}
+      {case 'facebook.com'}
+        {msg desc="Display name of the identity provider for Facebook sign-in."}Facebook{/msg}
+      {case 'twitter.com'}
+        {msg desc="Display name of the identity provider for Twitter sign-in."}Twitter{/msg}
+      {case 'anonymous'}
+        {msg desc="Display name of the identity provider for anonymous sign-in."}Guest{/msg}
+      {default}
+        {msg desc="Display name of the identity provider for password sign-in."}Password{/msg}
+    {/switch}
+  {/if}
 {/template}
 
 
@@ -549,8 +607,9 @@
  * The list should match the supported provider IDs in Firebase Auth.
  */
 {template .idpClass_ kind="text"}
-  {@param? providerId: string} /** The provider ID of the IdP. */
-  {switch $providerId}
+  {@param? providerConfig: [providerId:string|null, providerName:string|null,
+      buttonColor:string|null, iconUrl: string|null]} /** The IdP provider config. */
+  {switch $providerConfig.providerId}
     {case 'google.com'}
       firebaseui-idp-google
     {case 'github.com'}
@@ -561,8 +620,12 @@
       firebaseui-idp-twitter
     {case 'phone'}
       firebaseui-idp-phone
-    {default}
+    {case 'anonymous'}
+      firebaseui-idp-anonymous
+    {case 'password'}
       firebaseui-idp-password
+    {default}
+      firebaseui-idp-generic
   {/switch}
 {/template}
 
@@ -572,19 +635,26 @@
  * The list should match the supported provider IDs in Firebase Auth.
  */
 {template .idpLogo_ kind="uri"}
-  {@param? providerId: string} /** The provider ID of the IdP. */
-  {switch $providerId}
-    {case 'google.com'}
-      {$ij.googleLogo}
-    {case 'github.com'}
-      {$ij.githubLogo}
-    {case 'facebook.com'}
-      {$ij.facebookLogo}
-    {case 'twitter.com'}
-      {$ij.twitterLogo}
-    {case 'phone'}
-      {$ij.phoneLogo}
-    {default}
-      {$ij.passwordLogo}
-  {/switch}
+  {@param? providerConfig: [providerId:string|null, providerName:string|null,
+      buttonColor:string|null, iconUrl: string|null]} /** The IdP provider config. */
+  {if $providerConfig.iconUrl}
+    {$providerConfig.iconUrl}
+  {else}
+    {switch $providerConfig.providerId}
+      {case 'google.com'}
+        {$ij.googleLogo}
+      {case 'github.com'}
+        {$ij.githubLogo}
+      {case 'facebook.com'}
+        {$ij.facebookLogo}
+      {case 'twitter.com'}
+        {$ij.twitterLogo}
+      {case 'phone'}
+        {$ij.phoneLogo}
+      {case 'anonymous'}
+        {$ij.anonymousLogo}
+      {default}
+        {$ij.passwordLogo}
+    {/switch}
+  {/if}
 {/template}

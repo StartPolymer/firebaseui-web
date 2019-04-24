@@ -23,7 +23,6 @@ goog.require('firebaseui.auth.ui.element');
 goog.require('firebaseui.auth.ui.element.form');
 goog.require('firebaseui.auth.ui.element.phoneNumber');
 goog.require('firebaseui.auth.ui.element.recaptcha');
-goog.require('firebaseui.auth.ui.element.tospp');
 goog.require('firebaseui.auth.ui.page.Base');
 goog.require('goog.dom.selection');
 
@@ -33,13 +32,17 @@ goog.require('goog.dom.selection');
  * UI component for the user to enter their phone number.
  * @param {function(?)} onSubmitClick Callback to invoke when enter key (or its
  *     equivalent) is detected on submission.
- * @param {function(?)} onCancelClick Callback to invoke when cancel button
- *     is clicked.
  * @param {boolean} enableVisibleRecaptcha Whether to enable visible reCAPTCHA.
- * @param {?string=} opt_tosUrl The ToS URL.
- * @param {?string=} opt_privacyPolicyUrl The Privacy Policy URL.
+ * @param {?function(?)=} opt_onCancelClick Callback to invoke when cancel
+ *     button is clicked.
+ * @param {?function()=} opt_tosCallback Callback to invoke when the ToS link
+ *     is clicked.
+ * @param {?function()=} opt_privacyPolicyCallback Callback to invoke when the
+ *     Privacy Policy link is clicked.
  * @param {boolean=} opt_displayFullTosPpMessage Whether to display the full
  *     message of Term of Service and Privacy Policy.
+ * @param {?firebaseui.auth.data.country.LookupTree=} opt_lookupTree The country
+ *     lookup prefix tree to search country code with.
  * @param {?string=} opt_countryId The ID (e164_key) of the country to
  *     pre-select.
  * @param {?string=} opt_nationalNumber The national number to pre-fill.
@@ -49,11 +52,12 @@ goog.require('goog.dom.selection');
  */
 firebaseui.auth.ui.page.PhoneSignInStart = function(
     onSubmitClick,
-    onCancelClick,
     enableVisibleRecaptcha,
-    opt_tosUrl,
-    opt_privacyPolicyUrl,
+    opt_onCancelClick,
+    opt_tosCallback,
+    opt_privacyPolicyCallback,
     opt_displayFullTosPpMessage,
+    opt_lookupTree,
     opt_countryId,
     opt_nationalNumber,
     opt_domHelper) {
@@ -65,13 +69,14 @@ firebaseui.auth.ui.page.PhoneSignInStart = function(
       {
         enableVisibleRecaptcha: enableVisibleRecaptcha,
         nationalNumber: nationalNumber,
+        displayCancelButton: !!opt_onCancelClick,
         displayFullTosPpMessage: !!opt_displayFullTosPpMessage
       },
       opt_domHelper,
       'phoneSignInStart',
       {
-        tosUrl: opt_tosUrl,
-        privacyPolicyUrl: opt_privacyPolicyUrl
+        tosCallback: opt_tosCallback,
+        privacyPolicyCallback: opt_privacyPolicyCallback
       });
   /** @private @const {?string} The default country to select. */
   this.countryId_ = opt_countryId || null;
@@ -80,7 +85,12 @@ firebaseui.auth.ui.page.PhoneSignInStart = function(
   /** @private {?function(?)} On submit click callback. */
   this.onSubmitClick_ = onSubmitClick;
   /** @private {?function(?)} On cancel click callback. */
-  this.onCancelClick_ = onCancelClick;
+  this.onCancelClick_ = opt_onCancelClick || null;
+  /**
+   * @private {?firebaseui.auth.data.country.LookupTree} The country
+   *     lookup prefix tree to search country code with.
+   */
+  this.lookupTree_ = opt_lookupTree || null;
 };
 goog.inherits(
     firebaseui.auth.ui.page.PhoneSignInStart, firebaseui.auth.ui.page.Base);
@@ -88,11 +98,11 @@ goog.inherits(
 
 /** @override */
 firebaseui.auth.ui.page.PhoneSignInStart.prototype.enterDocument = function() {
-  this.initPhoneNumberElement(this.countryId_);
+  this.initPhoneNumberElement(this.lookupTree_, this.countryId_);
   // Handle a click on the submit button or cancel button.
   this.initFormElement(
       /** @type {function(?)} */ (this.onSubmitClick_),
-      /** @type {function(?)} */ (this.onCancelClick_));
+      this.onCancelClick_ || undefined);
   this.setupFocus_();
   firebaseui.auth.ui.page.PhoneSignInStart.base(this, 'enterDocument');
 };
@@ -137,6 +147,9 @@ goog.mixin(
     firebaseui.auth.ui.page.PhoneSignInStart.prototype,
     /** @lends {firebaseui.auth.ui.page.PhoneSignInStart.prototype} */
     {
+      // For country selector list.
+      getDialogElement:
+          firebaseui.auth.ui.element.dialog.getDialogElement,
       // For phone number input.
       getPhoneNumberElement:
           firebaseui.auth.ui.element.phoneNumber.getPhoneNumberElement,
@@ -146,6 +159,8 @@ goog.mixin(
           firebaseui.auth.ui.element.phoneNumber.initPhoneNumberElement,
       getPhoneNumberValue:
           firebaseui.auth.ui.element.phoneNumber.getPhoneNumberValue,
+      getCountrySelectorElement:
+           firebaseui.auth.ui.element.phoneNumber.getCountrySelectorElement,
 
       // For visible reCAPTCHA.
       getRecaptchaElement:
@@ -159,15 +174,5 @@ goog.mixin(
       getSecondaryLinkElement:
           firebaseui.auth.ui.element.form.getSecondaryLinkElement,
       initFormElement:
-          firebaseui.auth.ui.element.form.initFormElement,
-
-      // For ToS and Privacy Policy.
-      getTosPpElement:
-          firebaseui.auth.ui.element.tospp.getTosPpElement,
-      getTosLinkElement:
-          firebaseui.auth.ui.element.tospp.getTosLinkElement,
-      getPpLinkElement:
-          firebaseui.auth.ui.element.tospp.getPpLinkElement,
-      getTosPpListElement:
-          firebaseui.auth.ui.element.tospp.getTosPpListElement
+          firebaseui.auth.ui.element.form.initFormElement
     });

@@ -57,6 +57,12 @@ firebaseui.auth.util.getScheme = function() {
 };
 
 
+/** @return {boolean} Whether Cordova InAppBrowser plugin is installed. */
+firebaseui.auth.util.isCordovaInAppBrowserInstalled = function() {
+  return !!(window['cordova'] && window['cordova']['InAppBrowser']);
+};
+
+
 /** @return {boolean} Whether current scheme is HTTP or HTTPS. */
 firebaseui.auth.util.isHttpOrHttps = function() {
   return firebaseui.auth.util.getScheme() === 'http:' ||
@@ -110,6 +116,34 @@ firebaseui.auth.util.hasOpener = function() {
         window.opener.location.protocol === window.location.protocol);
   } catch (e) {}
   return false;
+};
+
+
+/**
+ * Loads the URL into the window with the specified name. If the name doesn't
+ * exist, then a new window is opened.
+ * It simply wraps the window.open and is meant for testing since some browsers
+ * don't allow overwriting of the native object.
+ *
+ * @param {string} url The target URL.
+ * @param {string} windowName The window name.
+ * @param {?number=} opt_width width of the popup
+ * @param {?number=} opt_height height of the popup
+ * @param {?Window=} opt_parentWin Parent window that should be used to open the
+ *     new window.
+ */
+firebaseui.auth.util.open =
+    function(url, windowName, opt_width, opt_height, opt_parentWin) {
+  var options = {
+    'target': windowName
+  };
+  if (opt_width) {
+    options['width'] = opt_width;
+  }
+  if (opt_height) {
+    options['height'] = opt_height;
+  }
+  goog.window.open(url, options, opt_parentWin);
 };
 
 
@@ -208,6 +242,22 @@ firebaseui.auth.util.getElement = function(element, opt_notFoundDesc) {
 
 
 /**
+ * Replaces the current history state with the provided one.
+ *
+ * @param {!Object} state The new history state.
+ * @param {string} title The associated document title.
+ * @param {string} url The associated URL.
+ */
+firebaseui.auth.util.replaceHistoryState = function(state, title, url) {
+  // History API should be supported by all browser in our support matrix.
+  if (goog.global.history &&
+      goog.global.history.replaceState) {
+    goog.global.history.replaceState(state, title, url);
+  }
+};
+
+
+/**
  * @return {string} The current location URL.
  */
 firebaseui.auth.util.getCurrentUrl = function() {
@@ -247,4 +297,23 @@ firebaseui.auth.util.onDomReady = function() {
     goog.events.unlisten(window, goog.events.EventType.LOAD, resolver);
     throw error;
   });
+};
+
+
+/**
+ * Generates a random alpha numeric string.
+ * @param {number} numOfChars The number of random characters within the string.
+ * @return {string} A string with a specific number of random characters.
+ */
+firebaseui.auth.util.generateRandomAlphaNumericString = function(numOfChars) {
+  var chars = [];
+  var allowedChars =
+      '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  while (numOfChars > 0) {
+    chars.push(
+        allowedChars.charAt(
+            Math.floor(Math.random() * allowedChars.length)));
+    numOfChars--;
+  }
+  return chars.join('');
 };

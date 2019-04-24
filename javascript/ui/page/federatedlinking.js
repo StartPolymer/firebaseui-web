@@ -21,7 +21,6 @@ goog.provide('firebaseui.auth.ui.page.FederatedLinking');
 goog.require('firebaseui.auth.soy2.page');
 goog.require('firebaseui.auth.ui.element');
 goog.require('firebaseui.auth.ui.element.form');
-goog.require('firebaseui.auth.ui.element.tospp');
 goog.require('firebaseui.auth.ui.page.Base');
 
 
@@ -29,22 +28,24 @@ goog.require('firebaseui.auth.ui.page.Base');
 /**
  * Federated account linking UI component.
  * @param {string} email The user's email.
- * @param {string} providerId The provider ID of the IdP we should use for sign
- *     in.
+ * @param {?Object} providerConfig The provider config of the IdP we should use
+ *     for sign in.
  * @param {function()} onSubmitClick Callback to invoke when the submit button
  *     is clicked.
- * @param {?string=} opt_tosUrl The ToS URL.
- * @param {?string=} opt_privacyPolicyUrl The Privacy Policy URL.
- * @param {goog.dom.DomHelper=} opt_domHelper Optional DOM helper.
+ * @param {?function()=} opt_tosCallback Callback to invoke when the ToS link
+ *     is clicked.
+ * @param {?function()=} opt_privacyPolicyCallback Callback to invoke when the
+ *     Privacy Policy link is clicked.
+ * @param {?goog.dom.DomHelper=} opt_domHelper Optional DOM helper.
  * @constructor
  * @extends {firebaseui.auth.ui.page.Base}
  */
 firebaseui.auth.ui.page.FederatedLinking = function(
     email,
-    providerId,
+    providerConfig,
     onSubmitClick,
-    opt_tosUrl,
-    opt_privacyPolicyUrl,
+    opt_tosCallback,
+    opt_privacyPolicyCallback,
     opt_domHelper) {
   firebaseui.auth.ui.page.FederatedLinking.base(
       this,
@@ -52,13 +53,13 @@ firebaseui.auth.ui.page.FederatedLinking = function(
       firebaseui.auth.soy2.page.federatedLinking,
       {
         email: email,
-        providerId: providerId
+        providerConfig: providerConfig
       },
       opt_domHelper,
       'federatedLinking',
       {
-        tosUrl: opt_tosUrl,
-        privacyPolicyUrl: opt_privacyPolicyUrl
+        tosCallback: opt_tosCallback,
+        privacyPolicyCallback: opt_privacyPolicyCallback
       });
   this.onSubmitClick_ = onSubmitClick;
 };
@@ -90,15 +91,5 @@ goog.mixin(
       getSubmitElement:
           firebaseui.auth.ui.element.form.getSubmitElement,
       initFormElement:
-          firebaseui.auth.ui.element.form.initFormElement,
-
-      // For tos pp.
-      getTosPpElement:
-          firebaseui.auth.ui.element.tospp.getTosPpElement,
-      getTosLinkElement:
-          firebaseui.auth.ui.element.tospp.getTosLinkElement,
-      getPpLinkElement:
-          firebaseui.auth.ui.element.tospp.getPpLinkElement,
-      getTosPpListElement:
-          firebaseui.auth.ui.element.tospp.getTosPpListElement
+          firebaseui.auth.ui.element.form.initFormElement
     });

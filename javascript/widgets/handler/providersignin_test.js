@@ -79,7 +79,14 @@ function setupProviderSignInPage(
     'customParameters': {'prompt': 'select_account'},
     'authMethod': 'https://accounts.google.com',
     'clientId': '1234567890.apps.googleusercontent.com'
-  }, 'facebook.com', 'password', 'phone'];
+  }, 'facebook.com', 'password', 'phone', 'anonymous', {
+    'provider': 'oidc.provider',
+    'providerName': 'OIDC Provider',
+    'buttonColor': '#2F2F2F',
+    'iconUrl': '<icon-url>',
+    'scopes': ['scope1', 'scope2'],
+    'customParameters': {'param': 'value'},
+  }];
   if (!opt_ignoreConfig) {
     app.setConfig({
       'signInOptions': signInOptions,
@@ -99,8 +106,7 @@ function setupProviderSignInPage(
   assertEquals('facebook.com', goog.dom.dataset.get(buttons[1], 'providerId'));
   assertEquals('password', goog.dom.dataset.get(buttons[2], 'providerId'));
   assertEquals('phone', goog.dom.dataset.get(buttons[3], 'providerId'));
-  assertTosPpFullMessage(
-      'http://localhost/tos', 'http://localhost/privacy_policy');
+  assertTosPpFullMessage(tosCallback, 'http://localhost/privacy_policy');
 }
 
 
@@ -712,6 +718,82 @@ function testHandleProviderSignIn_popup_success() {
 }
 
 
+function testHandleProviderSignIn_popup_success_oidc() {
+  // Test successful OIDC provider sign-in with popup.
+  // Add additional scopes to test that they are properly passed to the sign-in
+  // method.
+  // Set config signInSuccessWithAuthResult callback with false return value.
+  app.setConfig({
+    'callbacks': {
+      'signInSuccessWithAuthResult': signInSuccessWithAuthResultCallback(false)
+    }
+  });
+  var expectedProvider = firebaseui.auth.idp.getAuthProvider('oidc.provider');
+  expectedProvider.addScope('scope1');
+  expectedProvider.addScope('scope2');
+  expectedProvider.setCustomParameters({'param': 'value'});
+  // Render the provider sign-in page and confirm it was rendered correctly.
+  setupProviderSignInPage('popup');
+  // Click the OIDC sign-in button.
+  goog.testing.events.fireClickSequence(buttons[5]);
+
+  // User should be signed in.
+  testAuth.setUser({
+    'email': federatedAccount.getEmail(),
+    'displayName': federatedAccount.getDisplayName()
+  });
+  var cred  = {
+    'providerId': 'oidc.provider',
+    'idToken': 'OIDC_ID_TOKEN',
+    'rawNonce': 'NONCE'
+  };
+  // Sign in with popup triggered.
+  testAuth.assertSignInWithPopup(
+      [expectedProvider],
+      {
+        'user': testAuth.currentUser,
+        'credential': cred,
+        'operationType': 'signIn',
+        'additionalUserInfo': {
+          'providerId': 'oidc.provider',
+          'isNewUser': false
+        }
+      });
+  // Sign out from internal instance and then sign in with passed credential to
+  // external instance.
+  return testAuth.process().then(function() {
+    testAuth.assertSignOut([]);
+    return testAuth.process();
+  }).then(function() {
+    externalAuth.assertUpdateCurrentUser(
+        [testAuth.currentUser],
+        function() {
+          externalAuth.setUser(testAuth.currentUser);
+        });
+    return externalAuth.process();
+  }).then(function() {
+    testAuth.assertSignOut([]);
+    // Pending credential and email should be cleared from storage.
+    assertFalse(firebaseui.auth.storage.hasPendingEmailCredential(
+        app.getAppId()));
+    var expectedAuthResult = {
+      'user': externalAuth.currentUser,
+      // Federated credential should be exposed to callback.
+      'credential': cred,
+      'operationType': 'signIn',
+      'additionalUserInfo': {
+        'providerId': 'oidc.provider',
+        'isNewUser': false
+      }
+    };
+    // SignInSuccessWithAuthResultCallback is called.
+    assertSignInSuccessWithAuthResultCallbackInvoked(expectedAuthResult);
+    // Container should be cleared.
+    assertComponentDisposed();
+  });
+}
+
+
 function testHandleProviderSignIn_popup_success_multipleClicks() {
   // Test successful provider sign-in with popup when button clicked multiple
   // times.
@@ -1023,6 +1105,53 @@ function testHandleProviderSignIn_signInWithPhoneNumber() {
   // Recaptcha should be rendered.
   recaptchaVerifierInstance.assertRender([], 0);
   recaptchaVerifierInstance.process();
+}
+
+
+function testHandleProviderSignIn_continueAsGuest_success() {
+  // Test when continue as guest is clicked, that the relevant handler
+  // is triggered.
+  // Render the provider sign-in page and confirm it was rendered correctly.
+  setupProviderSignInPage('redirect');
+  // Click the fifth button, which is continue as guest button.
+  goog.testing.events.fireClickSequence(buttons[4]);
+  // Progress bar should be showed after clicking the button.
+  delayForBusyIndicatorAndAssertIndicatorShown();
+  // Sign In Anonymously triggered on external instance.
+  externalAuth.assertSignInAnonymously(
+      [],
+      {
+        'user': anonymousUser,
+        'credential': null
+      });
+  return externalAuth.process().then(function() {
+    // User should be redirected to success URL.
+    testUtil.assertGoTo('http://localhost/home');
+  });
+}
+
+
+function testHandleProviderSignIn_continueAsGuest_error() {
+  // Test when continue as guest is clicked, signInAnonymously returns an error.
+  // Render the provider sign-in page and confirm it was rendered correctly.
+  setupProviderSignInPage('redirect');
+  // Click the fifth button, which is continue as guest button.
+  goog.testing.events.fireClickSequence(buttons[4]);
+
+  var expectedError = {
+    'code': 'auth/operation-not-allowed',
+    'message': 'MESSAGE'
+  };
+  // Sign In Anonymously triggered on external instance.
+  externalAuth.assertSignInAnonymously(
+      [],
+      null,
+      expectedError);
+  return externalAuth.process().then(function() {
+    // On error, show a message on info bar.
+    assertInfoBarMessage(
+        firebaseui.auth.widget.handler.common.getErrorMessage(expectedError));
+  });
 }
 
 

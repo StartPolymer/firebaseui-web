@@ -86,7 +86,7 @@
 }
 
 .firebaseui-title {
-  padding-bottom: 20px;
+  padding-bottom: 16px;
 }
 
 .firebaseui-subtitle {
@@ -99,6 +99,10 @@
   font-size: 16px;
   line-height: 24px;
   text-align: left;
+}
+
+.firebaseui-id-page-password-recovery-email-sent p.firebaseui-text {
+  margin: 16px 0;
 }
 
 .firebaseui-text-emphasis {
@@ -373,6 +377,13 @@ input.firebaseui-input-invalid{
   background-color: #55acee;
 }
 
+.firebaseui-idp-anonymous,
+.firebaseui-idp-anonymous:hover,
+.mdl-button.firebaseui-idp-anonymous:active,
+.mdl-button.firebaseui-idp-anonymous:focus {
+  background-color: #f4b400;
+}
+
 .firebaseui-info-bar {
   background-color: #f9edbe;
   border: 1px solid #f0c36d;
@@ -516,12 +527,22 @@ input.firebaseui-input-invalid{
   margin-left: 114px;
 }
 
-.firebaseui-busy-indicator {
+.mdl-progress.firebaseui-busy-indicator {
   height: 2px;
   left: 0;
   position: absolute;
   top: 55px;
   width: 100%;
+}
+
+.mdl-spinner.firebaseui-busy-indicator {
+  height: 56px;
+  left: 0px;
+  margin: auto;
+  position: absolute;
+  right: 0px;
+  top: 30%;
+  width: 56px;
 }
 
 .firebaseui-callback-indicator-container .firebaseui-busy-indicator {
@@ -635,4 +656,23 @@ input.firebaseui-input-invalid{
 .mdl-textfield__label {
   font-weight: normal;
   margin-bottom: 0;
+}
+
+.firebaseui-id-page-blank {
+  background: inherit;
+  height: 64px;
+}
+
+.firebaseui-email-sent {
+  background-image: url("https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/success_status.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 64px 64px;
+  height: 64px;
+  margin-top: 16px;
+  text-align: center;
+}
+
+.firebaseui-text-justify {
+  text-align: justify;
 }

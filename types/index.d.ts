@@ -12,7 +12,7 @@
  * limitations under the License.
  */
 
-declare namespace firebaseui {}
+declare namespace firebaseui { }
 
 export as namespace firebaseui;
 
@@ -30,11 +30,37 @@ interface Callbacks {
 
 interface SignInOption {
   provider: string;
+}
+
+interface FederatedSignInOption extends SignInOption {
   authMethod?: string;
   clientId?: string;
   scopes?: string[];
   customParameters?: object;
+}
+
+interface ActionCodeSettings {
+  url: string;
+  handleCodeInApp?: boolean;
+  iOS?: {
+    bundleId: string;
+  };
+  android?: {
+    packageName: string;
+    installApp?: boolean;
+    minimumVersion?: string;
+  };
+  dynamicLinkDomain?: string;
+}
+
+interface EmailSignInOption extends SignInOption {
+  forceSameDevice?: boolean;
   requireDisplayName?: boolean;
+  signInMethod?: string;
+  emailLinkSignIn?(): ActionCodeSettings;
+}
+
+interface PhoneSignInOption extends SignInOption {
   recaptchaParameters?: {
     type?: string;
     size?: string;
@@ -43,6 +69,8 @@ interface SignInOption {
   defaultCountry?: string;
   defaultNationalNumber?: string;
   loginHint?: string;
+  whitelistedCountries?: string[];
+  blacklistedCountries?: string[];
 }
 
 declare namespace firebaseui.auth {
@@ -55,10 +83,12 @@ declare namespace firebaseui.auth {
     queryParameterForSignInSuccessUrl?: string;
     queryParameterForWidgetMode?: string;
     signInFlow?: string;
-    signInOptions?: Array<string | SignInOption>;
+    signInOptions?: Array<string
+      | FederatedSignInOption | EmailSignInOption | PhoneSignInOption>;
     signInSuccessUrl?: string;
     siteName?: string;
-    tosUrl?: string;
+    tosUrl?: (() => void) | string;
+    privacyPolicyUrl?: (() => void) | string;
     widgetUrl?: string;
   }
 
@@ -67,8 +97,8 @@ declare namespace firebaseui.auth {
     // tslint:disable-next-line:no-any firebase dependency not available.
     constructor(auth: any, appId?: string);
     disableAutoSignIn(): void;
-    start(element: string | Element, config: firebaseui.auth.Config);
-    setConfig(config: firebaseui.auth.Config);
+    start(element: string | Element, config: firebaseui.auth.Config): void;
+    setConfig(config: firebaseui.auth.Config): void;
     signIn(): void;
     reset(): void;
     delete(): Promise<void>;
@@ -89,6 +119,11 @@ declare namespace firebaseui.auth {
     static ACCOUNT_CHOOSER_COM: CredentialHelperType;
     static GOOGLE_YOLO: CredentialHelperType;
     static NONE: CredentialHelperType;
+  }
+
+  class AnonymousAuthProvider {
+    private constructor();
+    static PROVIDER_ID: string;
   }
 }
 

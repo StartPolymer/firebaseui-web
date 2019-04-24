@@ -37,6 +37,11 @@ var FakeUtil = function() {
   this.openerGoToUrl_ = null;
   this.closedWindow_ = null;
   this.popupUrl_ = null;
+  this.openUrl_ = null;
+  this.windowName_ = null;
+  this.lastHistoryState_ = null;
+  this.lastHistoryTitle_ = null;
+  this.lastHistoryUrl_ = null;
 };
 goog.inherits(FakeUtil, Disposable);
 
@@ -63,6 +68,15 @@ FakeUtil.prototype.install = function() {
   r.set(util, 'popup', function(url) {
     self.popupUrl_ = url;
   });
+  r.set(util, 'open', function(url, windowName) {
+    self.openUrl_ = url;
+    self.windowName_ = windowName;
+  });
+  r.set(util, 'replaceHistoryState', function(state, title, url) {
+    self.lastHistoryState_ = state;
+    self.lastHistoryTitle_ = title;
+    self.lastHistoryUrl_ = url;
+  });
   return this;
 };
 
@@ -73,6 +87,7 @@ FakeUtil.prototype.uninstall = function() {
   assertNull('unexpected openerGoTo', this.openerGoToUrl_);
   assertNull('unexpected window close', this.closedWindow_);
   assertNull('unexpected popup window', this.popupUrl_);
+  assertNull('unexpected replaceHistoryState', this.lastHistoryUrl_);
   this.hasOpener_ = null;
   this.goToUrl_ = null;
   this.openerGoToUrl_ = null;
@@ -82,6 +97,9 @@ FakeUtil.prototype.uninstall = function() {
     this.replacer_.reset();
     this.replacer_ = null;
   }
+  this.lastHistoryState_ = null;
+  this.lastHistoryTitle_ = null;
+  this.lastHistoryUrl_ = null;
 };
 
 
@@ -121,6 +139,19 @@ FakeUtil.prototype.assertOpenerGoTo = function(url) {
 
 
 /**
+ * Asserts the given URL is loaded in the given window.
+ * @param {string} url The URL to be loaded.
+ * @param {string} windowName The window name to be loaded into.
+ */
+FakeUtil.prototype.assertOpen = function(url, windowName) {
+  assertEquals(url, this.openUrl_);
+  assertEquals(windowName, this.windowName_);
+  this.openUrl_ = null;
+  this.windowName_ = null;
+};
+
+
+/**
  * Asserts a window is closed.
  * @param {!Window} window The closed window.
  */
@@ -148,6 +179,22 @@ FakeUtil.prototype.assertWindowNotClosed =
 FakeUtil.prototype.assertPopupWindow = function(url) {
   assertEquals(url, this.popupUrl_);
   this.popupUrl_ = null;
+};
+
+
+/**
+ * Asserts replaceHistoryState is called with provided history state.
+ * @param {!Object} state The last history state to assert.
+ * @param {string} title The associated document title.
+ * @param {string} url The associated URL.
+ */
+FakeUtil.prototype.assertReplaceHistoryState = function(state, title, url) {
+  assertObjectEquals(state, this.lastHistoryState_);
+  assertEquals(title, this.lastHistoryTitle_);
+  assertEquals(url, this.lastHistoryUrl_);
+  this.lastHistoryState_ = null;
+  this.lastHistoryTitle_ = null;
+  this.lastHistoryUrl_ = null;
 };
 
 exports = FakeUtil;

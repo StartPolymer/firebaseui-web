@@ -20,6 +20,7 @@ goog.provide('firebaseui.auth.widget.dispatcherTest');
 
 goog.require('firebaseui.auth.AuthUI');
 goog.require('firebaseui.auth.CredentialHelper');
+goog.require('firebaseui.auth.idp');
 goog.require('firebaseui.auth.storage');
 goog.require('firebaseui.auth.testing.FakeAcClient');
 goog.require('firebaseui.auth.testing.FakeAppClient');
@@ -64,6 +65,32 @@ function setUp() {
   firebase.initializeApp = function(options, name) {
     return new firebaseui.auth.testing.FakeAppClient(options, name);
   };
+  // Build mock auth providers.
+  firebase['auth'] = {};
+  for (var key in firebaseui.auth.idp.AuthProviders) {
+    firebase['auth'][firebaseui.auth.idp.AuthProviders[key]] = function() {
+      this.scopes = [];
+      this.customParameters = {};
+    };
+    firebase['auth'][firebaseui.auth.idp.AuthProviders[key]].PROVIDER_ID = key;
+    for (var method in firebaseui.auth.idp.SignInMethods[key]) {
+      firebase['auth'][firebaseui.auth.idp.AuthProviders[key]][method] =
+          firebaseui.auth.idp.SignInMethods[key][method];
+    }
+    if (key != 'twitter.com' && key != 'password') {
+      firebase['auth'][firebaseui.auth.idp.AuthProviders[key]]
+          .prototype.addScope = function(scope) {
+        this.scopes.push(scope);
+      };
+    }
+    if (key != 'password') {
+      // Record setCustomParameters for all OAuth providers.
+      firebase['auth'][firebaseui.auth.idp.AuthProviders[key]]
+          .prototype.setCustomParameters = function(customParameters) {
+        this.customParameters = customParameters;
+      };
+    }
+  }
   // Initialize external Firebase app.
   externalAuthApp = new firebaseui.auth.testing.FakeAppClient();
   // Pass installed external Firebase Auth instance.
@@ -494,6 +521,8 @@ function testDispatchOperation_callbackWithRedirectUrl() {
   setModeAndUrlParams(firebaseui.auth.widget.Config.WidgetMode.CALLBACK, {
     'signInSuccessUrl': redirectUrl
   });
+  // Simulate app returning from redirect sign-in operation.
+  firebaseui.auth.storage.setPendingRedirectStatus(app.getAppId());
   // No redirect URL.
   assertFalse(firebaseui.auth.storage.hasRedirectUrl(app.getAppId()));
   firebaseui.auth.widget.dispatcher.dispatchOperation(app, element);
@@ -509,6 +538,32 @@ function testDispatchOperation_callbackWithRedirectUrl() {
 }
 
 
+function testDispatchOperation_callbackWithRedirectUrl_noPendingRedirect() {
+  var element = goog.dom.createElement('div');
+  // Redirect URL.
+  var redirectUrl = 'http://www.example.com';
+  // Set current mode to callback mode.
+  // Simulate redirect URL above being available in URL.
+  setModeAndUrlParams(firebaseui.auth.widget.Config.WidgetMode.CALLBACK, {
+    'signInSuccessUrl': redirectUrl
+  });
+  // Simulate app not returning from redirect sign-in operation.
+  firebaseui.auth.storage.removePendingRedirectStatus(app.getAppId());
+  // No redirect URL.
+  assertFalse(firebaseui.auth.storage.hasRedirectUrl(app.getAppId()));
+  firebaseui.auth.widget.dispatcher.dispatchOperation(app, element);
+  // Redirect URL should be set now in storage.
+  assertTrue(firebaseui.auth.storage.hasRedirectUrl(app.getAppId()));
+  // Confirm it is the correct value.
+  assertEquals(
+      redirectUrl,
+      firebaseui.auth.storage.getRedirectUrl(app.getAppId()));
+  // Provider sign in handler should be invoked.
+  assertHandlerInvoked(
+      firebaseui.auth.widget.HandlerName.PROVIDER_SIGN_IN, app, element);
+}
+
+
 function testDispatchOperation_callbackWithUnsafeRedirectUrl() {
   var element = goog.dom.createElement('div');
   // Unsafe redirect URL.
@@ -517,6 +572,8 @@ function testDispatchOperation_callbackWithUnsafeRedirectUrl() {
   setModeAndUrlParams(firebaseui.auth.widget.Config.WidgetMode.SELECT, {
     'signInSuccessUrl': redirectUrl
   });
+  // Simulate app returning from redirect sign-in operation.
+  firebaseui.auth.storage.setPendingRedirectStatus(app.getAppId());
   // No redirect URL.
   assertFalse(firebaseui.auth.storage.hasRedirectUrl(app.getAppId()));
   firebaseui.auth.widget.dispatcher.dispatchOperation(app, element);
@@ -535,6 +592,8 @@ function testDispatchOperation_callbackWithUnsafeRedirectUrl() {
 function testDispatchOperation_noMode_providerFirst() {
   var element = goog.dom.createElement('div');
   setModeAndUrlParams(null);
+  // Simulate app returning from redirect sign-in operation.
+  firebaseui.auth.storage.setPendingRedirectStatus(app.getAppId());
   firebaseui.auth.widget.dispatcher.dispatchOperation(app, element);
   // Callback handler should be invoked since no mode will result with CALLBACK
   // mode.
@@ -546,9 +605,25 @@ function testDispatchOperation_noMode_providerFirst() {
 function testDispatchOperation_callback() {
   var element = goog.dom.createElement('div');
   setModeAndUrlParams(firebaseui.auth.widget.Config.WidgetMode.CALLBACK);
+  // Simulate app returning from redirect sign-in operation.
+  firebaseui.auth.storage.setPendingRedirectStatus(app.getAppId());
   firebaseui.auth.widget.dispatcher.dispatchOperation(app, element);
   assertHandlerInvoked(
       firebaseui.auth.widget.HandlerName.CALLBACK,
+      app,
+      element);
+}
+
+
+function testDispatchOperation_callback_noPendingRedirect() {
+  var element = goog.dom.createElement('div');
+  setModeAndUrlParams(firebaseui.auth.widget.Config.WidgetMode.CALLBACK);
+  // Simulate app not returning from redirect sign-in operation.
+  firebaseui.auth.storage.removePendingRedirectStatus(app.getAppId());
+  firebaseui.auth.widget.dispatcher.dispatchOperation(app, element);
+  // Provider sign in handler should be rendered.
+  assertHandlerInvoked(
+      firebaseui.auth.widget.HandlerName.PROVIDER_SIGN_IN,
       app,
       element);
 }
@@ -579,6 +654,31 @@ function testDispatchOperation_verifyEmail() {
       app,
       element,
       'ACTION_CODE');
+}
+
+
+function testDispatchOperation_emailLinkSignIn() {
+  var element = goog.dom.createElement('div');
+  setModeAndUrlParams(
+      firebaseui.auth.widget.Config.WidgetMode.SIGN_IN,
+      {'oobCode': 'ACTION_CODE', 'lang': 'en'});
+  firebaseui.auth.widget.dispatcher.dispatchOperation(app, element);
+  assertHandlerInvoked(
+      firebaseui.auth.widget.HandlerName.EMAIL_LINK_SIGN_IN_CALLBACK,
+      app,
+      element,
+      'https://www.example.com/?mode=signIn&oobCode=ACTION_CODE&lang=en');
+  // Confirm history state replaced.
+  testUtil.assertReplaceHistoryState(
+      {
+        'state': 'signIn',
+        'mode': 'emailLink',
+        'operation': 'clear'
+      },
+      // Same document title should be kept.
+      document.title,
+      // URL should be cleared from email sign-in related query params.
+      'https://www.example.com/?lang=en');
 }
 
 

@@ -19,6 +19,7 @@
 goog.provide('firebaseui.auth.widget.handler.handleCallback');
 
 goog.require('firebaseui.auth.PendingEmailCredential');
+goog.require('firebaseui.auth.idp');
 goog.require('firebaseui.auth.soy2.strings');
 goog.require('firebaseui.auth.storage');
 goog.require('firebaseui.auth.ui.page.Callback');
@@ -64,9 +65,8 @@ firebaseui.auth.widget.handler.handleCallback =
         error['credential']) {
       // Save pending email credential.
       firebaseui.auth.storage.setPendingEmailCredential(
-          /** @type {!firebaseui.auth.PendingEmailCredential} */ (
-              firebaseui.auth.PendingEmailCredential.fromPlainObject(
-                  /** @type {?Object} */ (error))),
+          new firebaseui.auth.PendingEmailCredential(
+              error['email'], error['credential']),
           app.getAppId());
       firebaseui.auth.widget.handler.handleCallbackLinking_(
           app, component, error['email']);
@@ -278,9 +278,7 @@ firebaseui.auth.widget.handler.handleCallbackLinking_ =
               firebaseui.auth.soy2.strings.errorAnonymousEmailBlockingSignIn()
                 .toString());
         } else if (goog.array.contains(signInMethods,
-            firebase.auth.EmailAuthProvider.EMAIL_PASSWORD_SIGN_IN_METHOD) ||
-            goog.array.contains(signInMethods,
-            firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD)) {
+            firebase.auth.EmailAuthProvider.EMAIL_PASSWORD_SIGN_IN_METHOD)) {
           // In this scenario, there can't be any error message passed from a
           // auth/user-cancelled error, as the sign in method is password.
           firebaseui.auth.widget.handler.handle(
@@ -288,14 +286,37 @@ firebaseui.auth.widget.handler.handleCallbackLinking_ =
               app,
               container,
               email);
-        } else {
+        } else if (signInMethods.length == 1 && signInMethods[0] ===
+            firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD) {
+          // In this scenario, there can't be any error message passed from a
+          // auth/user-cancelled error, as the sign in method is email link.
           firebaseui.auth.widget.handler.handle(
-              firebaseui.auth.widget.HandlerName.FEDERATED_LINKING,
+              firebaseui.auth.widget.HandlerName.EMAIL_LINK_SIGN_IN_LINKING,
               app,
               container,
-              email,
-              signInMethods[0],
-              opt_infoBarMessage);
+              email);
+        } else {
+          var federatedSignInMethod =
+              firebaseui.auth.idp.getFirstFederatedSignInMethod(
+                  signInMethods, app.getConfig().getProviders());
+          if (federatedSignInMethod) {
+            firebaseui.auth.widget.handler.handle(
+                firebaseui.auth.widget.HandlerName.FEDERATED_LINKING,
+                app,
+                container,
+                email,
+                federatedSignInMethod,
+                opt_infoBarMessage);
+          } else {
+            // No ability to link. Clear pending email credential.
+            firebaseui.auth.storage.removePendingEmailCredential(
+                app.getAppId());
+            firebaseui.auth.widget.handler.handle(
+                firebaseui.auth.widget.HandlerName.UNSUPPORTED_PROVIDER,
+                app,
+                container,
+                email);
+          }
         }
       }, function(error) {
         firebaseui.auth.widget.handler.handleCallbackFailure_(

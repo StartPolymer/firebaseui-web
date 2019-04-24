@@ -25,8 +25,10 @@ goog.require('firebaseui.auth.ui.element');
 goog.require('firebaseui.auth.ui.element.dialog');
 goog.require('firebaseui.auth.ui.element.infoBar');
 goog.require('firebaseui.auth.ui.element.progressDialog');
+goog.require('firebaseui.auth.ui.element.tospp');
 goog.require('firebaseui.auth.ui.mdl');
 goog.require('goog.dom');
+goog.require('goog.dom.classlist');
 goog.require('goog.events.Event');
 goog.require('goog.object');
 goog.require('goog.soy');
@@ -57,7 +59,8 @@ firebaseui.auth.ui.page.IJ_DATA_ = {
   facebookLogo: firebaseui.auth.ui.page.IMAGE_BASE + 'facebook.svg',
   twitterLogo: firebaseui.auth.ui.page.IMAGE_BASE + 'twitter.svg',
   passwordLogo: firebaseui.auth.ui.page.IMAGE_BASE + 'mail.svg',
-  phoneLogo: firebaseui.auth.ui.page.IMAGE_BASE + 'phone.svg'
+  phoneLogo: firebaseui.auth.ui.page.IMAGE_BASE + 'phone.svg',
+  anonymousLogo: firebaseui.auth.ui.page.IMAGE_BASE + 'anonymous.png'
 };
 
 
@@ -157,6 +160,24 @@ firebaseui.auth.ui.page.Base.prototype.enterDocument = function() {
           {
             'pageId': this.getPageId()
           }));
+  // If tos/pp element is available, sets the onClick handler when onClick
+  // callbacks are provided.
+  if (this.getTosLinkElement() && this.injectedData_.tosCallback) {
+    var tosCallback =
+        /** @type {function()} */ (this.injectedData_.tosCallback);
+    firebaseui.auth.ui.element.listenForActionEvent(
+        this, this.getTosLinkElement(), function(e) {
+          tosCallback();
+        });
+  }
+  if (this.getPpLinkElement() && this.injectedData_.privacyPolicyCallback) {
+    var privacyPolicyCallback =
+        /** @type {function()} */ (this.injectedData_.privacyPolicyCallback);
+    firebaseui.auth.ui.element.listenForActionEvent(
+        this, this.getPpLinkElement(), function(e) {
+          privacyPolicyCallback();
+        });
+  }
 };
 
 
@@ -198,12 +219,18 @@ firebaseui.auth.ui.page.Base.prototype.startProcessing_ = function() {
   // pages that load quickly do not display the indicator.
   var self = this;
   this.inProcessing_ = true;
+  // Check whether component uses default progress bar or spinner for busy
+  // indicator.
+  var useSpinner =
+      goog.dom.classlist.contains(self.getElement(), 'firebaseui-use-spinner');
   this.showProcessingTimeout_ = window.setTimeout(function() {
     if (!self.getElement() || self.busyIndicator_ !== null) {
       return;
     }
     self.busyIndicator_ = goog.soy.renderAsElement(
-        firebaseui.auth.soy2.element.busyIndicator, null, null,
+        firebaseui.auth.soy2.element.busyIndicator,
+        // Pass whether a spinner is to be used instead of a progress bar.
+        {useSpinner: useSpinner}, null,
         self.getDomHelper());
     self.getElement().appendChild(self.busyIndicator_);
     firebaseui.auth.ui.mdl.upgrade(self.busyIndicator_);
@@ -367,5 +394,15 @@ goog.mixin(
       dismissDialog:
           firebaseui.auth.ui.element.dialog.dismissDialog,
       getDialogElement:
-          firebaseui.auth.ui.element.dialog.getDialogElement
+          firebaseui.auth.ui.element.dialog.getDialogElement,
+
+      // For ToS and Privacy Policy.
+      getTosPpElement:
+          firebaseui.auth.ui.element.tospp.getTosPpElement,
+      getTosLinkElement:
+          firebaseui.auth.ui.element.tospp.getTosLinkElement,
+      getPpLinkElement:
+          firebaseui.auth.ui.element.tospp.getPpLinkElement,
+      getTosPpListElement:
+          firebaseui.auth.ui.element.tospp.getTosPpListElement
     });

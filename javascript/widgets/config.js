@@ -16,6 +16,7 @@
  * @fileoverview Defines all configurations used by FirebaseUI widget.
  */
 
+goog.provide('firebaseui.auth.AnonymousAuthProvider');
 goog.provide('firebaseui.auth.CredentialHelper');
 goog.provide('firebaseui.auth.callback.signInFailure');
 goog.provide('firebaseui.auth.callback.signInSuccess');
@@ -81,8 +82,7 @@ firebaseui.auth.widget.Config = function() {
 
 
 /**
- * The different credentials helper available, currently only
- * accountchooser.com.
+ * The different credentials helper available.
  *
  * @enum {string}
  */
@@ -91,6 +91,14 @@ firebaseui.auth.CredentialHelper = {
   GOOGLE_YOLO: 'googleyolo',
   NONE: 'none'
 };
+
+
+/**
+ * Provider ID for continue as guest sign in option.
+ *
+ * @const {string}
+ */
+firebaseui.auth.AnonymousAuthProvider.PROVIDER_ID = 'anonymous';
 
 
 /**
@@ -140,6 +148,25 @@ firebaseui.auth.widget.Config.SignInFlow = {
 };
 
 
+/**
+ * The provider config object for generic providers.
+ * providerId: The provider ID.
+ * providerName: The display name of the provider.
+ * buttonColor: The color of the sign in button.
+ * iconUrl: The URL of the icon on sign in button.
+ * loginHintKey: The name to use for the optional login hint parameter.
+ *
+ * @typedef {{
+ *   providerId: string,
+ *   providerName: (?string|undefined),
+ *   buttonColor: (?string|undefined),
+ *   iconUrl: (?string|undefined),
+ *   loginHintKey: (?string|undefined)
+ * }}
+ */
+firebaseui.auth.widget.Config.ProviderConfig;
+
+
 /** @return {?Object} The UI configuration for accountchooser.com. */
 firebaseui.auth.widget.Config.prototype.getAcUiConfig = function() {
   return /** @type {?Object} */ (this.config_.get('acUiConfig') || null);
@@ -155,8 +182,16 @@ firebaseui.auth.widget.Config.WidgetMode = {
   RECOVER_EMAIL: 'recoverEmail',
   RESET_PASSWORD: 'resetPassword',
   SELECT: 'select',
+  SIGN_IN: 'signIn',
   VERIFY_EMAIL: 'verifyEmail'
 };
+
+
+/**
+ * FirebaseUI supported providers in sign in option.
+ * @const @private {!Array<string>}
+ */
+firebaseui.auth.widget.Config.UI_SUPPORTED_PROVIDERS_ = ['anonymous'];
 
 
 /**
@@ -269,7 +304,7 @@ firebaseui.auth.widget.Config.prototype.getSignInOptions_ = function() {
     var normalizedConfig = goog.isObject(providerConfig) ?
         providerConfig : {'provider': providerConfig};
 
-    if (firebaseui.auth.idp.isSupportedProvider(normalizedConfig['provider'])) {
+    if (normalizedConfig['provider']) {
       normalizedOptions.push(normalizedConfig);
     }
   }
@@ -306,6 +341,58 @@ firebaseui.auth.widget.Config.prototype.getSignInOptionsForProvider_ =
 firebaseui.auth.widget.Config.prototype.getProviders = function() {
   return goog.array.map(this.getSignInOptions_(), function(option) {
     return option['provider'];
+  });
+};
+
+
+/**
+ * @param {string} providerId The provider id whose sign in provider config is
+ *     to be returned.
+ * @return {?firebaseui.auth.widget.Config.ProviderConfig} The list of sign in
+ *     provider configs for supported IdPs.
+ */
+firebaseui.auth.widget.Config.prototype.getConfigForProvider =
+    function(providerId) {
+  var providerConfigs = this.getProviderConfigs();
+  for (var i = 0; i < providerConfigs.length; i++) {
+    // Check if current option matches provider ID.
+    if (providerConfigs[i]['providerId'] === providerId) {
+      return providerConfigs[i];
+    }
+  }
+  return null;
+};
+
+
+/**
+ * Returns all available provider configs. For built-in providers, provider
+ * display name, button color and icon URL are fixed and cannot be overridden.
+ *
+ * @return {!Array<!firebaseui.auth.widget.Config.ProviderConfig>} The list of
+ *     supported IdP configs.
+ */
+firebaseui.auth.widget.Config.prototype.getProviderConfigs = function() {
+  return goog.array.map(this.getSignInOptions_(), function(option) {
+    if (firebaseui.auth.idp.isSupportedProvider(option['provider']) ||
+        goog.array.contains(
+            firebaseui.auth.widget.Config.UI_SUPPORTED_PROVIDERS_,
+            option['provider'])) {
+      // For built-in providers, provider display name, button color and
+      // icon URL are fixed. The login hint key is also automatically set for
+      // built-in providers that support it.
+      return {
+        providerId: option['provider']
+      };
+    } else {
+      return {
+        providerId: option['provider'],
+        providerName: option['providerName'] || null,
+        buttonColor: option['buttonColor'] || null,
+        iconUrl: option['iconUrl'] ?
+            firebaseui.auth.util.sanitizeUrl(option['iconUrl']) : null,
+        loginHintKey: option['loginHintKey'] || null
+      };
+    }
   });
 };
 
@@ -511,6 +598,80 @@ firebaseui.auth.widget.Config.prototype.getPhoneAuthDefaultCountry =
 };
 
 
+/**
+ * Returns the available countries for phone authentication.
+ * @return {?Array<!firebaseui.auth.data.country.Country>} The available
+ *     country list, or null if phone Auth is not enabled.
+ */
+firebaseui.auth.widget.Config.prototype.getPhoneAuthAvailableCountries =
+    function() {
+  var signInOptions = this.getSignInOptionsForProvider_(
+      firebase.auth.PhoneAuthProvider.PROVIDER_ID);
+  if (!signInOptions) {
+    return null;
+  }
+  var whitelistedCountries = signInOptions['whitelistedCountries'];
+  var blacklistedCountries = signInOptions['blacklistedCountries'];
+  // First validate the input.
+  if (typeof whitelistedCountries !== 'undefined' &&
+      (!goog.isArray(whitelistedCountries) ||
+       whitelistedCountries.length == 0)) {
+    throw new Error('WhitelistedCountries must be a non-empty array.');
+  }
+  if (typeof blacklistedCountries !== 'undefined' &&
+      (!goog.isArray(blacklistedCountries))) {
+    throw new Error('BlacklistedCountries must be an array.');
+  }
+  // If both whitelist and blacklist are provided, throw error.
+  if (whitelistedCountries && blacklistedCountries) {
+    throw new Error(
+        'Both whitelistedCountries and blacklistedCountries are provided.');
+  }
+  // If no whitelist or blacklist provided, return all available countries.
+  if (!whitelistedCountries && !blacklistedCountries) {
+    return firebaseui.auth.data.country.COUNTRY_LIST;
+  }
+  var countries = [];
+  var availableCountries = [];
+  if (whitelistedCountries) {
+    // Whitelist is provided.
+    var whitelistedCountryMap = {};
+    for (var i = 0; i < whitelistedCountries.length; i++) {
+      countries = firebaseui.auth.data.country
+          .getCountriesByE164OrIsoCode(whitelistedCountries[i]);
+      // Remove duplicate and overlaps by putting into a map.
+      for (var j = 0; j < countries.length; j++) {
+        whitelistedCountryMap[countries[j].e164_key] = countries[j];
+      }
+    }
+    for (var countryKey in whitelistedCountryMap) {
+       if (whitelistedCountryMap.hasOwnProperty(countryKey)) {
+         availableCountries.push(whitelistedCountryMap[countryKey]);
+       }
+    }
+    return availableCountries;
+  } else {
+    var blacklistedCountryMap = {};
+    for (var i = 0; i < blacklistedCountries.length; i++) {
+      countries = firebaseui.auth.data.country
+          .getCountriesByE164OrIsoCode(blacklistedCountries[i]);
+      // Remove duplicate and overlaps by putting into a map.
+      for (var j = 0; j < countries.length; j++) {
+        blacklistedCountryMap[countries[j].e164_key] = countries[j];
+      }
+    }
+    for (var k = 0; k < firebaseui.auth.data.country.COUNTRY_LIST.length; k++) {
+      if (!goog.object.containsKey(
+              blacklistedCountryMap,
+              firebaseui.auth.data.country.COUNTRY_LIST[k].e164_key)) {
+        availableCountries.push(firebaseui.auth.data.country.COUNTRY_LIST[k]);
+      }
+    }
+    return availableCountries;
+  }
+};
+
+
 /** @return {string} The query parameter name for widget mode. */
 firebaseui.auth.widget.Config.prototype.getQueryParameterForWidgetMode =
     function() {
@@ -533,29 +694,57 @@ firebaseui.auth.widget.Config.prototype.getSiteName = function() {
 };
 
 
-/** @return {?string} The ToS URL for the site. */
+/**
+ * @return {?function()} The ToS callback for the site. If URL is provided,
+ *     wraps the URL with a callback function.
+ */
 firebaseui.auth.widget.Config.prototype.getTosUrl = function() {
   var tosUrl = this.config_.get('tosUrl') || null;
   var privacyPolicyUrl = this.config_.get('privacyPolicyUrl') || null;
   if (tosUrl && !privacyPolicyUrl) {
     firebaseui.auth.log.warning('Privacy Policy URL is missing, ' +
                                 'the link will not be displayed.');
-    return null;
   }
-  return /** @type {?string} */ (tosUrl);
+  if (tosUrl && privacyPolicyUrl) {
+    if (goog.isFunction(tosUrl)) {
+      return /** @type {function()} */ (tosUrl);
+    } else if (goog.isString(tosUrl)) {
+      return function() {
+        firebaseui.auth.util.open(
+            /** @type {string} */ (tosUrl),
+            firebaseui.auth.util.isCordovaInAppBrowserInstalled() ?
+            '_system' : '_blank');
+      };
+    }
+  }
+  return null;
 };
 
 
-/** @return {?string} The Privacy Policy URL for the site. */
+/**
+ * @return {?function()} The Privacy Policy callback for the site. If
+ *     URL is provided, wraps the URL with a callback function.
+ */
 firebaseui.auth.widget.Config.prototype.getPrivacyPolicyUrl = function() {
   var tosUrl = this.config_.get('tosUrl') || null;
   var privacyPolicyUrl = this.config_.get('privacyPolicyUrl') || null;
   if (privacyPolicyUrl && !tosUrl) {
     firebaseui.auth.log.warning('Term of Service URL is missing, ' +
                                 'the link will not be displayed.');
-    return null;
   }
-  return /** @type {?string} */ (privacyPolicyUrl);
+  if (tosUrl && privacyPolicyUrl) {
+    if (goog.isFunction(privacyPolicyUrl)) {
+        return /** @type {function()} */ (privacyPolicyUrl);
+    } else if (goog.isString(privacyPolicyUrl)) {
+      return function() {
+        firebaseui.auth.util.open(
+            /** @type {string} */ (privacyPolicyUrl),
+            firebaseui.auth.util.isCordovaInAppBrowserInstalled() ?
+            '_system' : '_blank');
+      };
+    }
+  }
+  return null;
 };
 
 
@@ -573,6 +762,69 @@ firebaseui.auth.widget.Config.prototype.isDisplayNameRequired = function() {
     return /** @type {boolean} */ (!!signInOptions['requireDisplayName']);
   }
   return true;
+};
+
+
+/**
+ * @return {boolean} Whether email link sign-in is allowed. Defaults to false.
+ */
+firebaseui.auth.widget.Config.prototype.isEmailLinkSignInAllowed = function() {
+  // Get provided sign-in options for specified provider.
+  var signInOptions = this.getSignInOptionsForProvider_(
+      firebase.auth.EmailAuthProvider.PROVIDER_ID);
+
+  return !!(signInOptions && signInOptions['signInMethod'] ===
+            firebase.auth.EmailAuthProvider.EMAIL_LINK_SIGN_IN_METHOD);
+};
+
+
+/**
+ * @return {boolean} Whether password sign-in is allowed. Defaults to true.
+ */
+firebaseui.auth.widget.Config.prototype.isEmailPasswordSignInAllowed =
+    function() {
+  return !this.isEmailLinkSignInAllowed();
+};
+
+
+/** @return {boolean} Whether same device is forced for email link sign-in. */
+firebaseui.auth.widget.Config.prototype.isEmailLinkSameDeviceForced =
+    function() {
+  // Get provided sign-in options for specified provider.
+  var signInOptions = this.getSignInOptionsForProvider_(
+      firebase.auth.EmailAuthProvider.PROVIDER_ID);
+
+  return !!(signInOptions && signInOptions['forceSameDevice']);
+};
+
+
+/**
+ * @return {?firebase.auth.ActionCodeSettings} The ActionCodeSettings if email
+ *     link sign-in is enabled. Null is returned otherwise.
+ */
+firebaseui.auth.widget.Config.prototype.getEmailLinkSignInActionCodeSettings =
+    function() {
+  if (this.isEmailLinkSignInAllowed()) {
+    var actionCodeSettings = {
+      'url': firebaseui.auth.util.getCurrentUrl(),
+      'handleCodeInApp': true
+    };
+    // Get provided sign-in options for specified provider.
+    var signInOptions = this.getSignInOptionsForProvider_(
+        firebase.auth.EmailAuthProvider.PROVIDER_ID);
+    if (signInOptions &&
+        typeof signInOptions['emailLinkSignIn'] === 'function') {
+      goog.object.extend(
+          actionCodeSettings,
+          signInOptions['emailLinkSignIn']());
+    }
+    // URL could be provided using a relative path.
+    actionCodeSettings['url'] = goog.Uri.resolve(
+        firebaseui.auth.util.getCurrentUrl(),
+        actionCodeSettings['url']).toString();
+    return actionCodeSettings;
+  }
+  return null;
 };
 
 
@@ -763,6 +1015,7 @@ firebaseui.auth.widget.Config.prototype.setConfig = function(config) {
     }
   }
   this.resolveImplicitConfig_();
+  this.getPhoneAuthAvailableCountries();
 };
 
 
@@ -774,4 +1027,5 @@ firebaseui.auth.widget.Config.prototype.setConfig = function(config) {
  */
 firebaseui.auth.widget.Config.prototype.update = function(name, value) {
   this.config_.update(name, value);
+  this.getPhoneAuthAvailableCountries();
 };

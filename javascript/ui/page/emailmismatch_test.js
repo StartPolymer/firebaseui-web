@@ -25,10 +25,12 @@ goog.require('firebaseui.auth.ui.page.EmailMismatch');
 goog.require('firebaseui.auth.ui.page.PageTestHelper');
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
+goog.require('goog.testing.MockClock');
 goog.require('goog.testing.jsunit');
 goog.require('goog.userAgent');
 
 
+var mockClock;
 var root;
 var component;
 // Test helper for submit button and secondary link.
@@ -36,9 +38,14 @@ var formTestHelper =
     new firebaseui.auth.ui.element.FormTestHelper().registerTests();
 var tosPpTestHelper =
     new firebaseui.auth.ui.element.TosPpTestHelper().registerTests();
+var pageTestHelper =
+    new firebaseui.auth.ui.page.PageTestHelper().registerTests();
 
 
 function setUp() {
+  // Set up clock.
+  mockClock = new goog.testing.MockClock();
+  mockClock.install();
   root = goog.dom.createDom(goog.dom.TagName.DIV);
   document.body.appendChild(root);
   // Render email mismatch page with test helper onSubmit and onLinkClick
@@ -52,17 +59,27 @@ function setUp() {
       goog.bind(
           firebaseui.auth.ui.element.FormTestHelper.prototype.onLinkClick,
           formTestHelper),
-      'http://localhost/tos',
-      'http://localhost/privacy_policy');
+      goog.bind(
+          firebaseui.auth.ui.element.TosPpTestHelper.prototype.onTosLinkClick,
+          tosPpTestHelper),
+      goog.bind(
+          firebaseui.auth.ui.element.TosPpTestHelper.prototype.onPpLinkClick,
+          tosPpTestHelper));
   component.render(root);
   formTestHelper.setComponent(component);
-  tosPpTestHelper.setComponent(component);
   // Reset previous state of form helper.
   formTestHelper.resetState();
+  tosPpTestHelper.setComponent(component);
+  // Reset previous state of tosPp helper.
+  tosPpTestHelper.resetState();
+  pageTestHelper.setClock(mockClock).setComponent(component);
 }
 
 
 function tearDown() {
+  // Tear down clock.
+  mockClock.tick(Infinity);
+  mockClock.reset();
   component.dispose();
   goog.dom.removeNode(root);
 }
@@ -81,7 +98,6 @@ function testInitialFocus() {
 
 function testEmailMismatch_pageEvents() {
   // Run page event tests.
-  var pageTestHelper = new firebaseui.auth.ui.page.PageTestHelper();
   // Dispose previously created container since test must run before rendering
   // the component in docoument.
   component.dispose();

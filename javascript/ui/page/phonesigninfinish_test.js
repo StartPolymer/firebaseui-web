@@ -56,6 +56,8 @@ var resendTestHelper =
     new firebaseui.auth.ui.element.ResendTestHelper().registerTests();
 var tosPpTestHelper =
     new firebaseui.auth.ui.element.TosPpTestHelper().registerTests();
+var pageTestHelper =
+    new firebaseui.auth.ui.page.PageTestHelper().registerTests();
 
 function setUp() {
   // Set up clock.
@@ -72,8 +74,7 @@ function setUp() {
   };
   root = goog.dom.createDom(goog.dom.TagName.DIV);
   document.body.appendChild(root);
-  component = createComponent(phoneNumber, 'http://localhost/tos',
-      'http://localhost/privacy_policy');
+  component = createComponent(phoneNumber);
   tosPpTestHelper.setComponent(component);
 }
 
@@ -90,13 +91,10 @@ function tearDown() {
 
 /**
  * @param {string} phoneNumber The phone number being confirmed.
- * @param {?string=} opt_tosUrl The ToS URL.
- * @param {?string=} opt_privacyPolicyUrl The Privacy Policy URL.
  * @param {number=} opt_delay The resend delay.
  * @return {!goog.ui.Component} The rendered PhoneSignInFinish component.
  */
-function createComponent(phoneNumber, opt_tosUrl, opt_privacyPolicyUrl,
-    opt_delay) {
+function createComponent(phoneNumber, opt_delay) {
   var component = new firebaseui.auth.ui.page.PhoneSignInFinish(
       onChangePhoneClick,
       goog.bind(
@@ -106,8 +104,12 @@ function createComponent(phoneNumber, opt_tosUrl, opt_privacyPolicyUrl,
           firebaseui.auth.ui.element.FormTestHelper.prototype.onLinkClick,
           formTestHelper),
       onResendClick, phoneNumber, opt_delay || 0,
-      opt_tosUrl,
-      opt_privacyPolicyUrl);
+      goog.bind(
+          firebaseui.auth.ui.element.TosPpTestHelper.prototype.onTosLinkClick,
+          tosPpTestHelper),
+      goog.bind(
+          firebaseui.auth.ui.element.TosPpTestHelper.prototype.onPpLinkClick,
+          tosPpTestHelper));
   phoneConfirmationCodeTestHelper.setComponent(component);
   formTestHelper.setComponent(component);
   formTestHelper.resetState();
@@ -115,6 +117,8 @@ function createComponent(phoneNumber, opt_tosUrl, opt_privacyPolicyUrl,
   resendTestHelper.setComponent(component);
   resendTestHelper.resetState();
   tosPpTestHelper.setComponent(component);
+  tosPpTestHelper.resetState();
+  pageTestHelper.setClock(mockClock).setComponent(component);
   component.render(root);
   return component;
 }
@@ -196,8 +200,7 @@ function testPhoneSignInFinish_resendLink() {
 function testPhoneSignInFinish_timer() {
   component.dispose();
 
-  component = createComponent(phoneNumber, 'http://localhost/tos',
-      'http://localhost/privacy_policy', 10);
+  component = createComponent(phoneNumber, 10);
 
   assertResendLinkIsHidden(component, true);
   assertResendCountdownIsHidden(component, false);
@@ -239,7 +242,6 @@ function testSubmitOnSubmitElementClick() {
 
 
 function testPhoneSignInFinish_pageEvents() {
-  var pageTestHelper = new firebaseui.auth.ui.page.PageTestHelper();
   component = new firebaseui.auth.ui.page.PhoneSignInFinish(
       onChangePhoneClick,
       goog.bind(

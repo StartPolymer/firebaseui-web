@@ -29,13 +29,17 @@ goog.require('firebaseui.auth.ui.page.SignIn');
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
 goog.require('goog.events.KeyCodes');
+goog.require('goog.testing.MockClock');
 goog.require('goog.testing.events');
 goog.require('goog.testing.jsunit');
 goog.require('goog.userAgent');
 
 
+var mockClock;
 var root;
 var component;
+var tosCallback;
+var privacyPolicyCallback;
 var emailTestHelper =
     new firebaseui.auth.ui.element.EmailTestHelper().registerTests();
 // Ignore form helper submit button click as they are already explicitly
@@ -47,9 +51,20 @@ var infoBarTestHelper =
     new firebaseui.auth.ui.element.InfoBarTestHelper().registerTests();
 var tosPpTestHelper =
     new firebaseui.auth.ui.element.TosPpTestHelper().registerTests();
+var pageTestHelper =
+    new firebaseui.auth.ui.page.PageTestHelper().registerTests();
 
 
 function setUp() {
+  // Set up clock.
+  mockClock = new goog.testing.MockClock();
+  mockClock.install();
+  tosCallback = goog.bind(
+      firebaseui.auth.ui.element.TosPpTestHelper.prototype.onTosLinkClick,
+      tosPpTestHelper);
+  privacyPolicyCallback = goog.bind(
+      firebaseui.auth.ui.element.TosPpTestHelper.prototype.onPpLinkClick,
+      tosPpTestHelper);
   root = goog.dom.createDom(goog.dom.TagName.DIV);
   document.body.appendChild(root);
   component = new firebaseui.auth.ui.page.SignIn(
@@ -60,17 +75,23 @@ function setUp() {
           firebaseui.auth.ui.element.FormTestHelper.prototype.onLinkClick,
           formTestHelper),
       undefined,
-      'http://localhost/tos',
-      'http://localhost/privacy_policy');
+      tosCallback,
+      privacyPolicyCallback);
   component.render(root);
   emailTestHelper.setComponent(component);
   infoBarTestHelper.setComponent(component);
   formTestHelper.setComponent(component);
   tosPpTestHelper.setComponent(component);
+  // Reset previous state of tosPp helper.
+  tosPpTestHelper.resetState();
+  pageTestHelper.setClock(mockClock).setComponent(component);
 }
 
 
 function tearDown() {
+  // Tear down clock.
+  mockClock.tick(Infinity);
+  mockClock.reset();
   component.dispose();
   goog.dom.removeNode(root);
 }
@@ -113,13 +134,12 @@ function testSignIn_fullMessage() {
           firebaseui.auth.ui.element.FormTestHelper.prototype.onLinkClick,
           formTestHelper),
       undefined,
-      'http://localhost/tos',
-      'http://localhost/privacy_policy',
+      tosCallback,
+      privacyPolicyCallback,
       true);
   component.render(root);
   tosPpTestHelper.setComponent(component);
-  tosPpTestHelper.assertFullMessage('http://localhost/tos',
-      'http://localhost/privacy_policy');
+  tosPpTestHelper.assertFullMessage(tosCallback, privacyPolicyCallback);
 }
 
 
@@ -143,8 +163,7 @@ function testSignIn_fullMessage_noUrl() {
 
 
 function testSignIn_footerOnly() {
-  tosPpTestHelper.assertFooter('http://localhost/tos',
-      'http://localhost/privacy_policy');
+  tosPpTestHelper.assertFooter(tosCallback, privacyPolicyCallback);
 }
 
 
@@ -168,7 +187,6 @@ function testSignIn_footerOnly_noUrl() {
 
 function testSignIn_pageEvents() {
   // Run page event tests.
-  var pageTestHelper = new firebaseui.auth.ui.page.PageTestHelper();
   // Dispose previously created container since test must run before rendering
   // the component in docoument.
   component.dispose();

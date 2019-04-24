@@ -30,13 +30,17 @@ goog.require('firebaseui.auth.ui.page.PasswordSignUp');
 goog.require('goog.dom');
 goog.require('goog.dom.TagName');
 goog.require('goog.events.KeyCodes');
+goog.require('goog.testing.MockClock');
 goog.require('goog.testing.events');
 goog.require('goog.testing.jsunit');
 goog.require('goog.userAgent');
 
 
+var mockClock;
 var root;
 var component;
+var tosCallback;
+var privacyPolicyCallback;
 var emailTestHelper = new firebaseui.auth.ui.element.EmailTestHelper().
     excludeTests('testOnEnter_', 'testOnTextChanged_').
     registerTests();
@@ -50,16 +54,23 @@ var infoBarTestHelper =
     new firebaseui.auth.ui.element.InfoBarTestHelper().registerTests();
 var tosPpTestHelper =
     new firebaseui.auth.ui.element.TosPpTestHelper().registerTests();
+var pageTestHelper =
+    new firebaseui.auth.ui.page.PageTestHelper().registerTests();
 
 /**
  * @param {boolean} requireDisplayName Whether to show the display name.
- * @param {?string=} opt_tosUrl The ToS URL.
- * @param {?string=} opt_privacyPolicyUrl The Privacy Policy URL.
+ * @param {?function()=} opt_tosCallback Callback to invoke when the ToS link
+ *     is clicked.
+ * @param {?function()=} opt_privacyPolicyCallback Callback to invoke when the
+ *     Privacy Policy link is clicked.
  * @param {string=} opt_name The name to prefill.
+ * @param {boolean=} opt_displayFullTosPpMessage Whether to display the full
+ *     message of Term of Service and Privacy Policy.
  * @return {!goog.ui.Component} The rendered PhoneSignInFinish component.
  */
 function createComponent(
-    requireDisplayName, opt_tosUrl, opt_privacyPolicyUrl, opt_name) {
+    requireDisplayName, opt_tosCallback, opt_privacyPolicyCallback, opt_name,
+    opt_displayFullTosPpMessage) {
   var component = new firebaseui.auth.ui.page.PasswordSignUp(
       requireDisplayName,
       goog.bind(
@@ -70,8 +81,9 @@ function createComponent(
           formTestHelper),
       'user@example.com',
       opt_name,
-      opt_tosUrl,
-      opt_privacyPolicyUrl);
+      opt_tosCallback,
+      opt_privacyPolicyCallback,
+      opt_displayFullTosPpMessage);
   component.render(root);
   emailTestHelper.setComponent(component);
   nameTestHelper.setComponent(component);
@@ -81,19 +93,33 @@ function createComponent(
   formTestHelper.resetState();
   infoBarTestHelper.setComponent(component);
   tosPpTestHelper.setComponent(component);
+  // Reset previous state of tosPp helper.
+  tosPpTestHelper.resetState();
+  pageTestHelper.setClock(mockClock).setComponent(component);
   return component;
 }
 
 
 function setUp() {
+  // Set up clock.
+  mockClock = new goog.testing.MockClock();
+  mockClock.install();
+  tosCallback = goog.bind(
+      firebaseui.auth.ui.element.TosPpTestHelper.prototype.onTosLinkClick,
+      tosPpTestHelper);
+  privacyPolicyCallback = goog.bind(
+      firebaseui.auth.ui.element.TosPpTestHelper.prototype.onPpLinkClick,
+      tosPpTestHelper);
   root = goog.dom.createDom(goog.dom.TagName.DIV);
   document.body.appendChild(root);
-  component = createComponent(true, 'http://localhost/tos',
-      'http://localhost/privacy_policy');
+  component = createComponent(true, tosCallback, privacyPolicyCallback);
 }
 
 
 function tearDown() {
+  // Tear down clock.
+  mockClock.tick(Infinity);
+  mockClock.reset();
   component.dispose();
   goog.dom.removeNode(root);
 }
@@ -131,12 +157,7 @@ function testInitialFocus_nameIsNotRequired() {
     return;
   }
   component.dispose();
-  component = new firebaseui.auth.ui.page.PasswordSignUp(
-      false,
-      goog.bind(
-          firebaseui.auth.ui.element.FormTestHelper.prototype.onSubmit,
-          formTestHelper));
-  component.render(root);
+  component = createComponent(false);
   assertNull(component.getNameElement());
 }
 
@@ -146,14 +167,13 @@ function testInitialFocus_newPassword() {
     return;
   }
   component.dispose();
-  component = createComponent(true, 'http://localhost/tos',
-      'http://localhost/privacy_policy', 'John Doe');
+  component = createComponent(
+      true, tosCallback, privacyPolicyCallback, 'John Doe');
   assertEquals(
       component.getNewPasswordElement(),
       goog.dom.getActiveElement(document));
   tosPpTestHelper.setComponent(component);
-  tosPpTestHelper.assertFooter('http://localhost/tos',
-      'http://localhost/privacy_policy');
+  tosPpTestHelper.assertFooter(tosCallback, privacyPolicyCallback);
 }
 
 
@@ -203,7 +223,6 @@ function testSubmitOnNewPasswordEnter() {
   goog.testing.events.fireKeySequence(
       component.getNewPasswordElement(), goog.events.KeyCodes.ENTER);
   formTestHelper.assertSubmitted();
-  tosPpTestHelper.setComponent(component);
   tosPpTestHelper.assertFooter(null, null);
 }
 
@@ -213,21 +232,10 @@ function testPasswordSignUp_fullMessage() {
     return;
   }
   component.dispose();
-  component = new firebaseui.auth.ui.page.PasswordSignUp(
-      true,
-      goog.bind(
-          firebaseui.auth.ui.element.FormTestHelper.prototype.onSubmit,
-          formTestHelper),
-      undefined,
-      undefined,
-      undefined,
-      'http://localhost/tos',
-      'http://localhost/privacy_policy',
-      true);
-  tosPpTestHelper.setComponent(component);
-  component.render(root);
+  component = createComponent(
+      true, tosCallback, privacyPolicyCallback, undefined, true);
   tosPpTestHelper.assertFullMessage(
-      'http://localhost/tos', 'http://localhost/privacy_policy');
+      tosCallback, privacyPolicyCallback);
 }
 
 
@@ -236,26 +244,13 @@ function testPasswordSignUp_fullMessage_noUrl() {
     return;
   }
   component.dispose();
-  component = new firebaseui.auth.ui.page.PasswordSignUp(
-      true,
-      goog.bind(
-          firebaseui.auth.ui.element.FormTestHelper.prototype.onSubmit,
-          formTestHelper),
-      undefined,
-      undefined,
-      undefined,
-      null,
-      null,
-      true);
-  tosPpTestHelper.setComponent(component);
-  component.render(root);
+  component = createComponent(true, null, null, undefined, true);
   tosPpTestHelper.assertFullMessage(null, null);
 }
 
 
 function testPasswordSignUp_pageEvents() {
   // Run page event tests.
-  var pageTestHelper = new firebaseui.auth.ui.page.PageTestHelper();
   // Initialize component.
   component = new firebaseui.auth.ui.page.PasswordSignUp(
       true,

@@ -200,8 +200,16 @@ firebaseui.auth.widget.dispatcher.doDispatchOperation_ = function(app, e) {
       if (redirectUrl) {
         firebaseui.auth.storage.setRedirectUrl(redirectUrl, app.getAppId());
       }
-      firebaseui.auth.widget.handler.handle(
-          firebaseui.auth.widget.HandlerName.CALLBACK, app, container);
+      // Avoid UI flicker if there is no pending redirect.
+      if (app.isPendingRedirect()) {
+        firebaseui.auth.widget.handler.handle(
+            firebaseui.auth.widget.HandlerName.CALLBACK, app, container);
+      } else {
+        // No pending redirect. Skip callback screen.
+        firebaseui.auth.widget.handler.common.handleSignInStart(
+            app,
+            container);
+      }
       break;
 
     case firebaseui.auth.widget.Config.WidgetMode.RESET_PASSWORD:
@@ -232,6 +240,18 @@ firebaseui.auth.widget.dispatcher.doDispatchOperation_ = function(app, e) {
           // Check if continue URL is available. if so, display a button to
           // redirect to it.
           firebaseui.auth.widget.dispatcher.getContinueCallback_());
+      break;
+
+    case firebaseui.auth.widget.Config.WidgetMode.SIGN_IN:
+      // Complete signin.
+      firebaseui.auth.widget.handler.handle(
+          firebaseui.auth.widget.HandlerName.EMAIL_LINK_SIGN_IN_CALLBACK,
+          app,
+          container,
+          firebaseui.auth.util.getCurrentUrl());
+      // Clear URL from email sign-in related query parameters to avoid
+      // re-running on reload.
+      app.clearEmailSignInState();
       break;
 
     case firebaseui.auth.widget.Config.WidgetMode.SELECT:

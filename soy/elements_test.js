@@ -38,8 +38,12 @@ var IJ_DATA_ = {
   'twitterLogo': '../image/twitter.svg',
   'passwordLogo': '../image/mail.svg',
   'phoneLogo': '../image/phone.svg',
-  'tosUrl': 'tos',
-  'privacyPolicyUrl': 'privacy_policy'
+  'tosCallback': function() {
+    window.location.assign('/tos');
+  },
+  'privacyPolicyCallback': function() {
+    window.location.assign('/privacyPolicy');
+  }
 };
 
 
@@ -156,15 +160,43 @@ function testResendLink() {
 
 
 function testIdpButton() {
-  var idps = [
-    'password', 'phone', 'google.com', 'github.com', 'facebook.com',
-    'twitter.com'
-  ];
+  var idpConfigs = [
+    {
+      providerId: 'password'
+    },
+    {
+      providerId: 'phone'
+    },
+    {
+      providerId: 'google.com'
+    },
+    {
+      providerId: 'github.com'
+    },
+    {
+      providerId: 'facebook.com'
+    },
+    {
+      providerId: 'twitter.com'
+    },
+    {
+      providerId: 'anonymous'
+    },
+    {
+      providerId: 'microsoft.com',
+      providerName: 'Microsoft',
+      buttonColor: '#FFB6C1',
+      iconUrl: 'icon-url',
+      loginHintKey: 'login_hint'
+    }];
   var root = goog.dom.getElement('idp-button');
-  for (var i = 0; i < idps.length; i++) {
+  for (var i = 0; i < idpConfigs.length; i++) {
     var button = goog.soy.renderAsElement(
         firebaseui.auth.soy2.element.idpButton,
-        {'providerId': idps[i], 'type': 'signIn'}, IJ_DATA_);
+        {
+          providerConfig: idpConfigs[i]
+        },
+        IJ_DATA_);
     root.appendChild(button);
     var separator = goog.dom.createElement('div');
     goog.dom.setProperties(separator, {'style': 'height:15px'});
@@ -272,9 +304,31 @@ function testPasswordRecoveryButton() {
 }
 
 
+function testTroubleGettingEmailButton() {
+  var root = goog.dom.getElement('trouble-getting-email-button');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.element.troubleGettingEmailButton);
+}
+
+
+function testResendEmailLinkButton() {
+  var root = goog.dom.getElement('resend-email-link-button');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.element.resendEmailLinkButton);
+}
+
+
 function testCancelButton() {
   var root = goog.dom.getElement('cancel-button');
   goog.soy.renderElement(root, firebaseui.auth.soy2.element.cancelButton);
+}
+
+
+function testCancelButton_customLabel() {
+  var root = goog.dom.getElement('cancel-button-custom-label');
+  goog.soy.renderElement(
+      root, firebaseui.auth.soy2.element.cancelButton,
+      {'label': 'back'});
 }
 
 
@@ -311,6 +365,14 @@ function testBusyIndicator() {
   var root = goog.dom.getElement('busy-indicator');
   var busy = goog.soy.renderAsElement(
       firebaseui.auth.soy2.element.busyIndicator, null);
+  root.appendChild(busy);
+}
+
+
+function testBusyIndicator_spinner() {
+  var root = goog.dom.getElement('busy-indicator-spinner');
+  var busy = goog.soy.renderAsElement(
+      firebaseui.auth.soy2.element.busyIndicator, {useSpinner: true});
   root.appendChild(busy);
 }
 
