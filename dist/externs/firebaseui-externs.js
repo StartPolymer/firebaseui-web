@@ -22,13 +22,27 @@
  * The FirebaseUI namespace.
  * @namespace
  */
-firebaseui = {};
+var firebaseui = {};
 
 /**
  * The FirebaseUI auth namespace.
  * @namespace
  */
 firebaseui.auth = {};
+
+
+/**
+ * The FirebaseUI Anonymous Auth Provider namespace.
+ * @constructor
+ */
+firebaseui.auth.AnonymousAuthProvider = {};
+
+
+/**
+ * The FirebaseUI Anonymous Auth Provider ID.
+ * @const {string}
+ */
+firebaseui.auth.AnonymousAuthProvider.PROVIDER_ID = 'anonymous';
 
 
 /**
@@ -88,11 +102,12 @@ firebaseui.auth.AuthUI.prototype.reset = function() {};
 firebaseui.auth.AuthUI.prototype.delete = function() {};
 
 /**
- * Returns true if there is any pending redirect operations to be resolved by
+ * Returns true if there is any pending redirect operation to be resolved by
  * the widget.
  *
  * @return {boolean} Whether the app has pending redirect operations to be
- *     performed.
+ *     performed or there is a pending incoming sign in with email link
+ *     operation waiting to be completed.
  */
 firebaseui.auth.AuthUI.prototype.isPendingRedirect = function() {};
 
@@ -217,7 +232,7 @@ firebaseui.auth.Config.prototype.signInFlow;
  * Determines the list of IdPs for handling federated sign-in, phone number as
  * well as password account sign-up.
  *
- * @type {!Array<!firebaseui.auth.SignInOption>|undefined}
+ * @type {!Array<!firebaseui.auth.SignInOption|string>|undefined}
  */
 firebaseui.auth.Config.prototype.signInOptions;
 
@@ -236,11 +251,18 @@ firebaseui.auth.Config.prototype.signInSuccessUrl;
 firebaseui.auth.Config.prototype.siteName;
 
 /**
- * The terms of service URL.
+ * The terms of service URL/callback.
  *
- * @type {string|undefined}
+ * @type {string|function()|undefined}
  */
 firebaseui.auth.Config.prototype.tosUrl;
+
+/**
+ * The privacy policy URL/callback.
+ *
+ * @type {string|function()|undefined}
+ */
+firebaseui.auth.Config.prototype.privacyPolicyUrl;
 
 /**
  * The sign-in widget URL. If not provided, this is the current URL.
@@ -306,19 +328,28 @@ firebaseui.auth.SignInOption = function() {};
 firebaseui.auth.SignInOption.prototype.provider;
 
 /**
+ * Defines the sign-in option needed to configure the FirebaseUI federated
+ * sign-in widget.
+ *
+ * @interface
+ * @extends {firebaseui.auth.SignInOption}
+ */
+firebaseui.auth.FederatedSignInOption = function() {};
+
+/**
  * The Auth method (typically the authorization endpoint) needed for one-tap
  * sign-up, eg: 'https://accounts.google.com'.
  *
  * @type {string|undefined}
  */
-firebaseui.auth.SignInOption.prototype.authMethod;
+firebaseui.auth.FederatedSignInOption.prototype.authMethod;
 
 /**
  * The OAuth client ID needed for one-tap sign-up credential helper.
  *
  * @type {string|undefined}
  */
-firebaseui.auth.SignInOption.prototype.clientId;
+firebaseui.auth.FederatedSignInOption.prototype.clientId;
 
 /**
  * The list of additional OAuth scopes for the selected provider.
@@ -330,7 +361,7 @@ firebaseui.auth.SignInOption.prototype.clientId;
  *
  * @type {!Array<string>|undefined}
  */
-firebaseui.auth.SignInOption.prototype.scopes;
+firebaseui.auth.FederatedSignInOption.prototype.scopes;
 
 /**
  * The custom OAuth parameters for the selected OAuth provider.
@@ -344,7 +375,16 @@ firebaseui.auth.SignInOption.prototype.scopes;
  *
  * @type {!Object|undefined}
  */
-firebaseui.auth.SignInOption.prototype.customParameters;
+firebaseui.auth.FederatedSignInOption.prototype.customParameters;
+
+/**
+ * Defines the sign-in option needed to configure the FirebaseUI email sign-in
+ * widget.
+ *
+ * @interface
+ * @extends {firebaseui.auth.SignInOption}
+ */
+firebaseui.auth.EmailSignInOption = function() {};
 
 /**
  * Whether to require the display name to be provided for email/password user
@@ -352,7 +392,44 @@ firebaseui.auth.SignInOption.prototype.customParameters;
  *
  * @type {boolean|undefined}
  */
-firebaseui.auth.SignInOption.prototype.requireDisplayName;
+firebaseui.auth.EmailSignInOption.prototype.requireDisplayName;
+
+/**
+ * The sign-in method to support for email sign-in. This can be either
+ * 'password' or 'emailLink'. The default is 'password'.
+ *
+ * @type {string|undefined}
+ */
+firebaseui.auth.EmailSignInOption.prototype.signInMethod;
+
+/**
+ * Whether to force same device flow. If false, opening the link on a different
+ * device will display an error message. This should be true when
+ * used with anonymous user upgrade flows. The default is false.
+ *
+ * @type {boolean|undefined}
+ */
+firebaseui.auth.EmailSignInOption.prototype.forceSameDevice;
+
+/**
+ * Defines the optional callback function to return
+ * `firebase.auth.ActionCodeSettings` configuration to use when sending the
+ * link. This provides the ability to specify how the link can be handled,
+ * custom dynamic link, additional state in the deep link, etc.
+ * When not provided, the current URL is used and a web only flow is triggered.
+ *
+ * @type {(function():!firebase.auth.ActionCodeSettings)|undefined}
+ */
+firebaseui.auth.EmailSignInOption.prototype.emailLinkSignIn;
+
+/**
+ * Defines the sign-in option needed to configure the FirebaseUI phone sign-in
+ * widget.
+ *
+ * @interface
+ * @extends {firebaseui.auth.SignInOption}
+ */
+firebaseui.auth.PhoneSignInOption = function() {};
 
 /**
  * The reCAPTCHA parameters needed to customize the reCAPTCHA for phone
@@ -371,14 +448,14 @@ firebaseui.auth.SignInOption.prototype.requireDisplayName;
  *   badge: (string|undefined)
  * }|undefined}
  */
-firebaseui.auth.SignInOption.prototype.recaptchaParameters;
+firebaseui.auth.PhoneSignInOption.prototype.recaptchaParameters;
 
 /**
  * Sets the default country, eg. (GB) for the United Kingdom.
  *
  * @type {string|undefined}
  */
-firebaseui.auth.SignInOption.prototype.defaultCountry;
+firebaseui.auth.PhoneSignInOption.prototype.defaultCountry;
 
 /**
  * The default national number which will be prefilled when the phone sign-in
@@ -389,7 +466,7 @@ firebaseui.auth.SignInOption.prototype.defaultCountry;
  *
  * @type {string|undefined}
  */
-firebaseui.auth.SignInOption.prototype.defaultNationalNumber;
+firebaseui.auth.PhoneSignInOption.prototype.defaultNationalNumber;
 
 /**
  * The full phone number string instead of the 'defaultCountry' and
@@ -400,4 +477,26 @@ firebaseui.auth.SignInOption.prototype.defaultNationalNumber;
  *
  * @type {string|undefined}
  */
-firebaseui.auth.SignInOption.prototype.loginHint;
+firebaseui.auth.PhoneSignInOption.prototype.loginHint;
+
+/**
+ * Sets the whitelisted countries. Accept either ISO (alpha-2) or E164 formatted
+ * country codes. Invalid country code will be ignored. If `defaultCountry` is
+ * provided, it must be whitelisted. `whitelistedCountries` and
+ * `blacklistedCountries` cannot be specified at the same time.
+ * Example: ['US', '+44']
+ *
+ * @type {!Array<string>|undefined}
+ */
+firebaseui.auth.PhoneSignInOption.prototype.whitelistedCountries;
+
+/**
+ * Sets the blacklisted countries. Accept either ISO (alpha-2) or E164 formatted
+ * country codes. Invalid country code will be ignored. If `defaultCountry` is
+ * provided, it must not be blacklisted. `whitelistedCountries` and
+ * `blacklistedCountries` cannot be specified at the same time.
+ * Example: ['US', '+44']
+ *
+ * @type {!Array<string>|undefined}
+ */
+firebaseui.auth.PhoneSignInOption.prototype.blacklistedCountries;
